@@ -7,7 +7,7 @@
 - [2.4 硬件、软件与设备需求](#24-硬件软件与设备需求)
 - [3. 技术架构设计](#3-技术架构设计)
 - [3.2.5 模型训练策略](#325-模型训练策略)
-- [3.4 微服务拆分与 gRPC 调用设计](#34-微服务拆分与-grpc-调用设计)
+- [3.4 单体分层与模块调用设计](#34-单体分层与模块调用设计)
 - [4. 核心功能模块设计](#4-核心功能模块设计)
 - [5. 数据库设计](#5-数据库设计)
 - [6. 界面设计说明](#6-界面设计说明)
@@ -148,8 +148,8 @@
 | Python | 3.9+ | 后端服务与 AI 推理 |
 | Node.js | 18+ | 前端构建与本地开发 |
 | MySQL | 8.0+（或 SQLite 3） | 训练数据持久化 |
-| gRPC | 1.60+ | 微服务间高性能 RPC 通信 |
-| Protocol Buffers | 3.20+ | 服务接口定义与代码生成 |
+| FastAPI | 0.100+ | 单体后端 Web API 开发 |
+| Uvicorn | 0.23+ | ASGI 运行服务 |
 | Git | 2.30+ | 版本管理 |
 | Docker（可选） | 24+ | 一键部署与环境隔离 |
 | Nginx（可选） | 1.20+ | 反向代理与静态资源服务 |
@@ -186,24 +186,18 @@
                                    │
                                    ▼ HTTP/WebSocket
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    API Gateway（FastAPI/BFF）                        │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼ gRPC
-┌─────────────────────────────────────────────────────────────────────┐
-│                         微服务层（Python）                            │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
-│  │ UserService │ │TrainingSvc  │ │ ScoringSvc  │ │ AnalyticsSvc│   │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           AI 推理层                                   │
-│         YOLOv8(物体检测) + MediaPipe(姿态估计) + 规则引擎           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
-│  │灭火器检测│  │姿态关键点│  │评分计算  │  │ gRPC AI Inference │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘   │
+│                    单体后端应用（FastAPI）                           │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ API 路由层：用户接口 / 训练接口 / 统计接口                    │  │
+│  ├───────────────────────────────────────────────────────────────┤  │
+│  │ 中间件与通用能力：鉴权、日志、异常处理、配置管理              │  │
+│  ├───────────────────────────────────────────────────────────────┤  │
+│  │ 业务服务层：User / Training / Scoring / Analytics            │  │
+│  ├───────────────────────────────────────────────────────────────┤  │
+│  │ AI 能力层：YOLOv8 检测 + MediaPipe 姿态 + 规则引擎            │  │
+│  ├───────────────────────────────────────────────────────────────┤  │
+│  │ 数据访问层：SQLAlchemy / Repository                           │  │
+│  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -232,11 +226,10 @@
 | 技术 | 版本 | 选型理由 |
 | --- | --- | --- |
 | Python | 3.9+ | AI 生态完善，开发效率高 |
-| FastAPI（Gateway） | 0.100+ | 统一对外 API，前后端解耦 |
-| gRPC | 1.60+ | 服务间低延迟、高吞吐调用 |
-| Protocol Buffers | 3.20+ | 统一接口契约，便于多语言扩展 |
+| FastAPI（单体后端） | 0.100+ | 统一承载 REST API、业务逻辑与系统集成，降低复杂度 |
 | SQLAlchemy | 2.0+ | ORM 框架，数据库操作方便 |
 | Pydantic | 2.0+ | 数据验证，类型安全 |
+| Uvicorn | 0.23+ | 单体应用运行入口，部署简单 |
 
 #### 3.2.3 AI 技术
 
@@ -308,33 +301,20 @@ fire_training_system/
 │   ├── package.json
 │   └── vite.config.js
 │
-├── gateway/                      # 对外 HTTP API（FastAPI）
+├── backend/                      # 单体后端（FastAPI）
 │   ├── app/
-│   │   ├── api/
-│   │   ├── middleware/
-│   │   ├── grpc_clients/
+│   │   ├── api/                  # REST 路由
+│   │   ├── core/                 # 配置、常量、安全
+│   │   ├── middleware/           # 日志、鉴权、异常处理
+│   │   ├── models/               # ORM 模型
+│   │   ├── repositories/         # 数据访问层
+│   │   ├── schemas/              # Pydantic 请求/响应模型
+│   │   ├── services/             # 用户/训练/评分/统计业务
+│   │   ├── ai/                   # YOLOv8、MediaPipe、规则引擎
+│   │   ├── utils/
 │   │   └── main.py
-│   └── requirements.txt
-│
-├── services/
-│   ├── user-service/
-│   │   ├── app/
-│   │   └── main.py
-│   ├── training-service/
-│   │   ├── app/
-│   │   └── main.py
-│   ├── scoring-service/
-│   │   ├── app/
-│   │   └── main.py
-│   └── analytics-service/
-│       ├── app/
-│       └── main.py
-│
-├── proto/                        # gRPC 接口定义
-│   ├── user.proto
-│   ├── training.proto
-│   ├── scoring.proto
-│   └── analytics.proto
+│   ├── requirements.txt
+│   └── alembic/                  # 可选，数据库迁移
 │
 ├── data/
 │   ├── videos/
@@ -347,61 +327,65 @@ fire_training_system/
     └── 用户手册.md
 ```
 
-### 3.4 微服务拆分与 gRPC 调用设计
+### 3.4 单体分层与模块调用设计
 
-#### 3.4.1 服务拆分原则
+#### 3.4.1 分层原则
 
-- 单一职责：每个服务只负责一个核心业务域
-- 数据边界清晰：服务拥有各自数据模型，避免强耦合
-- 接口契约优先：所有内部调用以 `.proto` 为单一真源
+- 单体部署：系统以一个后端进程对外提供服务，降低部署与联调成本
+- 逻辑分层：通过 `api -> service -> repository -> model` 分层隔离职责
+- AI 内聚：YOLOv8、MediaPipe、规则引擎作为内部模块调用，不额外拆服务
+- 边界清晰：控制器不直接操作数据库，业务逻辑不直接暴露 HTTP 细节
 
-#### 3.4.2 服务清单
+#### 3.4.2 模块清单
 
-| 服务名 | 主要职责 | 对外/对内接口 |
+| 模块名 | 主要职责 | 对外/对内接口 |
 | --- | --- | --- |
-| API Gateway | 统一鉴权、聚合响应、对前端暴露 REST API | 对外 REST；对内 gRPC Client |
-| UserService | 用户注册、登录、资料管理 | gRPC |
-| TrainingService | 训练任务创建、视频管理、状态跟踪 | gRPC |
-| ScoringService | 姿态计算、流程判定、评分与反馈 | gRPC |
-| AnalyticsService | 统计报表、趋势分析、排行榜 | gRPC |
+| API Router | 对前端暴露 REST API，接收请求并返回响应 | 对外 REST |
+| Auth & Middleware | JWT 鉴权、日志、异常处理、跨域配置 | 应用内部调用 |
+| User Module | 用户注册、登录、资料管理 | 内部 Service 调用 |
+| Training Module | 训练任务创建、视频管理、状态跟踪 | 内部 Service 调用 |
+| Scoring Module | 姿态计算、流程判定、评分与反馈 | 内部 Service 调用 |
+| Analytics Module | 统计报表、趋势分析、排行榜 | 内部 Service 调用 |
+| Repository Layer | 封装数据库读写 | 内部 Repository 调用 |
 
 #### 3.4.3 典型调用链路
 
-1. 前端调用 Gateway：`POST /api/training/start`
-2. Gateway 调用 TrainingService（gRPC）创建训练任务
-3. TrainingService 调用 ScoringService（gRPC）执行推理评分
-4. ScoringService 返回结果，TrainingService 落库
-5. Gateway 汇总响应返回前端
+1. 前端调用后端：`POST /api/training/start`
+2. 路由层完成鉴权和参数校验
+3. `TrainingService` 创建训练任务并保存初始记录
+4. `ScoringService` 在进程内调用 AI 模块执行推理评分
+5. 评分结果写回数据库，后端统一返回前端
 
-#### 3.4.4 gRPC 接口设计示例
+#### 3.4.4 REST 接口设计示例
 
-```proto
-syntax = "proto3";
+```python
+from fastapi import APIRouter
+from pydantic import BaseModel
 
-package training;
+router = APIRouter(prefix="/api/training", tags=["training"])
 
-service TrainingService {
-  rpc StartTraining (StartTrainingRequest) returns (StartTrainingResponse);
-  rpc GetTrainingResult (GetTrainingResultRequest) returns (GetTrainingResultResponse);
-}
 
-message StartTrainingRequest {
-  int64 user_id = 1;
-  string training_type = 2;
-}
+class StartTrainingRequest(BaseModel):
+    user_id: int
+    training_type: str
 
-message StartTrainingResponse {
-  string training_id = 1;
-  string status = 2;
-}
+
+class StartTrainingResponse(BaseModel):
+    training_id: str
+    status: str
+
+
+@router.post("/start", response_model=StartTrainingResponse)
+def start_training(payload: StartTrainingRequest):
+    return {"training_id": "TRN-20260310-001", "status": "created"}
 ```
 
-#### 3.4.5 通信与容错策略
+#### 3.4.5 模块通信与容错策略
 
-- 超时控制：默认 1-3 秒，关键推理接口可配置更长超时
-- 重试策略：幂等查询接口可重试，写操作谨慎重试
-- 错误码规范：统一业务码与 gRPC status 映射
-- 可观测性：记录请求链路 ID、耗时、错误日志，便于排障
+- 超时控制：AI 推理模块设置最大执行时长，避免单次请求阻塞过久
+- 异常兜底：统一异常处理器将内部异常映射为规范 REST 错误码
+- 写操作保护：训练创建、评分落库等关键步骤保持事务一致性
+- 可观测性：记录请求 ID、耗时、错误日志，便于排障
 
 ## 4. 核心功能模块设计
 
@@ -438,7 +422,7 @@ class User(Base):
 
 #### 4.1.3 API 接口
 
-对外由 API Gateway 暴露 REST API；内部由 gRPC 服务完成实际业务处理。
+由单体后端统一暴露 REST API，用户管理逻辑在后端应用内部按分层方式实现。
 
 | 接口 | 方法 | 路径 | 描述 |
 | --- | --- | --- | --- |
@@ -515,7 +499,7 @@ class TrainingRecord(Base):
 
 #### 4.2.5 API 接口
 
-对外由 API Gateway 暴露 REST API；Gateway 再调用 TrainingService/ScoringService 的 gRPC 接口。
+由单体后端统一暴露 REST API，训练任务、评分计算和结果存储在应用内部完成调用。
 
 | 接口 | 方法 | 路径 | 描述 |
 | --- | --- | --- | --- |
@@ -553,7 +537,7 @@ class TrainingStatistics(Base):
 
 #### 4.3.3 API 接口
 
-对外由 API Gateway 暴露 REST API；内部通过 AnalyticsService 的 gRPC 接口实现。
+由单体后端统一暴露 REST API，统计分析逻辑在应用内部直接访问业务模块和数据层实现。
 
 | 接口 | 方法 | 路径 | 描述 |
 | --- | --- | --- | --- |
@@ -955,10 +939,10 @@ def generate_feedback(score_details):
 
 | 周次 | 任务 | 交付物 |
 | --- | --- | --- |
-| 第 3 周 | 微服务拆分（User/Training/Scoring/Analytics） | 各服务骨架代码 |
-| 第 3 周 | Proto 定义与 gRPC 基础联通 | `.proto` 文件与联调记录 |
-| 第 4 周 | AI 推理模块集成、评分逻辑（ScoringService） | 评分服务接口 |
-| 第 4 周 | Gateway 聚合接口与文档完善 | REST API + gRPC 接口文档 |
+| 第 3 周 | 单体后端分层搭建（API/Service/Repository/Model） | 后端骨架代码 |
+| 第 3 周 | REST 接口定义与数据库访问打通 | 接口文档与联调记录 |
+| 第 4 周 | AI 推理模块集成、评分逻辑（Scoring Module） | 评分模块接口 |
+| 第 4 周 | 后端接口完善与文档整理 | REST API 文档 |
 
 #### 第 5-7 周：前端开发
 
@@ -1006,8 +990,8 @@ def generate_feedback(score_details):
 | 开发进度延迟 | 中 | 中 | 优先保证核心功能，简化次要功能 |
 | 硬件资源不足 | 低 | 中 | 使用云服务或降低视频分辨率 |
 | 数据收集困难 | 中 | 低 | 使用公开数据集 + 模拟数据 |
-| 微服务调用复杂度上升 | 中 | 中-高 | 先落地最小服务集，统一 proto 与错误码规范 |
-| 分布式链路排障困难 | 中 | 中 | 增加链路 ID、统一日志格式、关键接口监控 |
+| 单体模块边界混乱 | 中 | 中 | 严格按 API、Service、Repository、AI 模块分层开发 |
+| AI 推理阻塞主请求 | 中 | 中 | 控制超时、抽帧处理，必要时改为后台任务 |
 
 ### 8.5 最小可行训练计划（1周）
 
@@ -1068,11 +1052,11 @@ def generate_feedback(score_details):
 
 | 成果类型 | 具体内容 |
 | --- | --- |
-| 可运行系统 | 基于微服务 + gRPC 的完整 Web 应用系统，支持本地部署 |
-| 源代码 | 前端 + Gateway + 各微服务完整源代码，含注释 |
+| 可运行系统 | 基于单体后端 + 前端分离的完整 Web 应用系统，支持本地部署 |
+| 源代码 | 前端 + 单体后端完整源代码，含注释 |
 | 数据库 | 完整的数据库结构和初始数据 |
 | 部署文档 | 系统部署和配置说明文档 |
-| 接口契约文档 | gRPC `proto` 定义与 REST 网关映射说明 |
+| 接口契约文档 | REST API 定义与前后端交互说明 |
 
 ### 9.2 文档成果
 
@@ -1311,5 +1295,5 @@ class ScoreCalculator:
 | MediaPipe 官方 | <https://google.github.io/mediapipe/> |
 | Vue3 官方 | <https://vuejs.org/> |
 | FastAPI 官方 | <https://fastapi.tiangolo.com/> |
-| gRPC 官方 | <https://grpc.io/> |
+| SQLAlchemy 官方 | <https://docs.sqlalchemy.org/> |
 | Element Plus | <https://element-plus.org/> |

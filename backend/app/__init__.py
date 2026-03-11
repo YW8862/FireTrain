@@ -1,0 +1,1 @@
+"""FireTrain backend application package."""

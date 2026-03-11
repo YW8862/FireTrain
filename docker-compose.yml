@@ -13,34 +13,58 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - firetrain-network
 
-  gateway:
-    image: python:3.11-slim
-    container_name: firetrain-gateway
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: firetrain-backend
     working_dir: /app
-    command: sh -c "echo 'Gateway placeholder service. Replace with real app startup.' && sleep infinity"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./fire_training.db
+      - JWT_SECRET_KEY=dev-secret-key-not-for-production
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./backend:/app
+      - ./data/models:/app/data/models
+      - ./data/videos:/app/data/videos
     depends_on:
       mysql:
         condition: service_healthy
-    volumes:
-      - ./gateway:/app
+    networks:
+      - firetrain-network
 
   frontend:
-    image: node:20-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: firetrain-frontend
     working_dir: /app
-    command: sh -c "echo 'Frontend placeholder service. Initialize Vite project later.' && sleep infinity"
+    command: npm run dev -- --host 0.0.0.0
     ports:
       - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api
     volumes:
       - ./frontend:/app
+    networks:
+      - firetrain-network
 
 volumes:
   mysql_data:
+
+networks:
+  firetrain-network:
+    driver: bridge
