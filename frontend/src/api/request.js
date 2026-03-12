@@ -3,12 +3,16 @@ import axios from 'axios'
 // 创建 axios 实例
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
-  timeout: 30000
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
 })
 
-// 请求拦截器
+// 添加请求日志
 request.interceptors.request.use(
   config => {
+    console.log('[API 请求]', config.method.toUpperCase(), config.url, config.data)
     // 添加 token
     const token = localStorage.getItem('token')
     if (token) {
@@ -17,7 +21,7 @@ request.interceptors.request.use(
     return config
   },
   error => {
-    console.error('请求错误:', error)
+    console.error('[API 请求错误]:', error)
     return Promise.reject(error)
   }
 )
@@ -25,9 +29,11 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   response => {
+    console.log('[API 响应成功]', response.config.url, response.data)
     return response.data
   },
   error => {
+    console.error('[API 响应错误]', error)
     if (error.response) {
       switch (error.response.status) {
         case 401:
@@ -47,6 +53,13 @@ request.interceptors.response.use(
         default:
           console.error(`请求失败：${error.response.status}`)
       }
+    } else if (error.request) {
+      console.error('网络错误：已发送请求但未收到响应', error.request)
+      console.error('请求详情:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        baseURL: error.config?.baseURL
+      })
     } else {
       console.error('网络错误:', error.message)
     }

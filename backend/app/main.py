@@ -17,6 +17,9 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+        "http://117.72.44.96:5173",  # 添加公网 IP
+        "*",  # 开发环境允许所有来源（生产环境应该移除）
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -2,12 +2,23 @@ import request from './request'
 
 /**
  * 用户登录
+ * @param {Object} data - 登录数据
+ * @param {string} data.username - 用户名或邮箱
+ * @param {string} data.password - 密码
  */
 export function login(data) {
+  // 使用 URLSearchParams 发送表单格式数据，而不是 JSON
+  const formData = new URLSearchParams()
+  formData.append('username', data.username)
+  formData.append('password', data.password)
+  
   return request({
     url: '/user/login',
     method: 'post',
-    data
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    data: formData
   })
 }
 

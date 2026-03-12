@@ -40,8 +40,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-// TODO: 实现注册 API
-// import { register } from '@/api/user'
+import { register } from '@/api/user'
 
 const router = useRouter()
 const registerFormRef = ref(null)
@@ -89,13 +88,38 @@ const handleRegister = async () => {
     if (valid) {
       loading.value = true
       try {
-        // TODO: 调用注册 API
-        // await register(form)
+        console.log('开始调用注册 API...')
+        console.log('请求数据:', form)
+        
+        // 调用注册 API
+        await register({
+          username: form.username,
+          email: form.email,
+          password: form.password,
+          phone: null  // 手机号暂时不传
+        })
+        
+        console.log('注册成功!')
         ElMessage.success('注册成功，请登录')
         router.push('/login')
       } catch (error) {
-        console.error('注册失败:', error)
-        ElMessage.error(error.response?.data?.detail || '注册失败')
+        console.error('注册失败详情:', error)
+        console.error('错误响应:', error.response)
+        console.error('错误消息:', error.message)
+        
+        let errorMsg = '注册失败'
+        if (error.response) {
+          // 服务器返回了响应
+          errorMsg = error.response.data?.detail || `服务器错误：${error.response.status}`
+        } else if (error.request) {
+          // 请求已发送但没有收到响应
+          errorMsg = '无法连接到服务器，请检查后端服务是否启动'
+        } else {
+          // 其他错误
+          errorMsg = error.message || '未知错误'
+        }
+        
+        ElMessage.error(errorMsg)
       } finally {
         loading.value = false
       }
