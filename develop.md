@@ -241,6 +241,19 @@
 
 ---
 
+> ✅ **状态**: 已完成 (2026-03-11)
+> 
+> **完成内容**:
+> - ✅ 创建了完整的 REST 路由结构（/api/user/*, /api/training/*, /api/stats/*）
+> - ✅ 实现了 20+ 个 Pydantic Schema（请求/响应校验）
+> - ✅ 定义了 JWT Token 鉴权机制（OAuth2PasswordBearer）
+> - ✅ 所有接口都有明确的 response_model 和错误处理
+> - ✅ 编写了完整的 API 文档（561 行 Markdown + Swagger UI）
+> - ✅ 在 main.py 中完成路由注册和 CORS 配置
+> - ✅ 前端可依据文档进行 Mock 开发和联调
+
+
+
 ## 4. 阶段 C：后端核心模块编码（第 3-4 周）
 
 > 顺序关键：**先应用骨架与公共能力 -> 用户模块 -> 训练模块 -> 统计模块**。
