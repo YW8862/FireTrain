@@ -4,93 +4,30 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_db
 from app.schemas.statistics import (
     PersonalStatisticsResponse,
     TrainingTrendResponse,
     StepAnalysisResponse,
     StatisticsOverviewResponse,
 )
+from app.services.statistics_service import StatisticsService
 
 router = APIRouter(prefix="/api/stats", tags=["统计分析"])
 
 
-# TODO: 实现统计数据查询
-async def get_user_statistics(user_id: int):
-    """获取用户统计数据（待实现）"""
-    return {
-        "user_id": user_id,
-        "total_trainings": 10,
-        "completed_trainings": 8,
-        "total_training_seconds": Decimal("3600.00"),
-        "average_score": Decimal("85.50"),
-        "best_score": Decimal("95.00"),
-        "last_training_at": datetime.utcnow()
-    }
-
-
-async def get_training_trend(user_id: int, days: int = 7):
-    """获取训练趋势数据（待实现）"""
-    today = datetime.utcnow().date()
-    trend_data = []
-    
-    for i in range(days):
-        date = today - timedelta(days=i)
-        trend_data.append({
-            "date": date.isoformat(),
-            "training_count": i % 3 + 1,
-            "average_score": Decimal(f"{80 + i}"),
-            "best_score": Decimal(f"{90 + i}") if i % 2 == 0 else None
-        })
-    
-    return {
-        "trend_data": trend_data,
-        "total_days": days
-    }
-
-
-async def get_step_analysis(user_id: int):
-    """获取步骤分析数据（待实现）"""
-    return {
-        "step_analysis": [
-            {
-                "step_name": "提灭火器",
-                "average_score": Decimal("18.5"),
-                "success_rate": Decimal("92.5"),
-                "improvement_suggestion": "保持手臂伸直"
-            },
-            {
-                "step_name": "拔保险销",
-                "average_score": Decimal("19.0"),
-                "success_rate": Decimal("95.0"),
-                "improvement_suggestion": None
-            },
-            {
-                "step_name": "握喷管",
-                "average_score": Decimal("17.5"),
-                "success_rate": Decimal("87.5"),
-                "improvement_suggestion": "双手握持更稳定"
-            },
-            {
-                "step_name": "瞄准火源",
-                "average_score": Decimal("18.0"),
-                "success_rate": Decimal("90.0"),
-                "improvement_suggestion": "保持安全距离"
-            },
-            {
-                "step_name": "压把手",
-                "average_score": Decimal("17.0"),
-                "success_rate": Decimal("85.0"),
-                "improvement_suggestion": "均匀用力下压"
-            }
-        ]
-    }
+def get_statistics_service(session: AsyncSession = Depends(get_db)) -> StatisticsService:
+    """获取 StatisticsService 实例"""
+    return StatisticsService(session)
 
 
 # ============ 统计接口 ============
 
 @router.get("/personal", response_model=PersonalStatisticsResponse)
 async def get_personal_statistics(
+    stats_service: StatisticsService = Depends(get_statistics_service),
     # TODO: 添加用户认证
     current_user_id: int = 1  # 临时硬编码
 ):
@@ -99,14 +36,21 @@ async def get_personal_statistics(
     
     返回用户的总训练次数、平均分、最佳成绩等统计信息
     """
-    stats = await get_user_statistics(current_user_id)
+    stats = await stats_service.get_personal_statistics(current_user_id)
     
-    return PersonalStatisticsResponse(**stats)
+    if not stats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未找到该用户的统计数据"
+        )
+    
+    return stats
 
 
 @router.get("/trend", response_model=TrainingTrendResponse)
 async def get_training_trend(
     days: int = Query(7, ge=1, le=30, description="查询天数"),
+    stats_service: StatisticsService = Depends(get_statistics_service),
     # TODO: 添加用户认证
     current_user_id: int = 1  # 临时硬编码
 ):
@@ -117,11 +61,17 @@ async def get_training_trend(
     
     返回每天的训练次数和平均分数，用于绘制趋势图
     """
-    return await get_training_trend(current_user_id, days=days)
+    trend_data = await stats_service.get_training_trend(current_user_id, days=days)
+    
+    return TrainingTrendResponse(
+        trend_data=trend_data,
+        total_days=len(trend_data)
+    )
 
 
 @router.get("/step-analysis", response_model=StepAnalysisResponse)
 async def get_step_analysis_api(
+    stats_service: StatisticsService = Depends(get_statistics_service),
     # TODO: 添加用户认证
     current_user_id: int = 1  # 临时硬编码
 ):
@@ -130,13 +80,14 @@ async def get_step_analysis_api(
     
     分析用户在各操作步骤上的表现，提供改进建议
     """
-    analysis = await get_step_analysis(current_user_id)
-    return analysis
+    analysis = await stats_service.get_step_analysis(current_user_id)
+    return StepAnalysisResponse(step_analysis=analysis)
 
 
 @router.get("/overview", response_model=StatisticsOverviewResponse)
 async def get_statistics_overview(
     days: int = Query(7, ge=1, le=30, description="趋势天数"),
+    stats_service: StatisticsService = Depends(get_statistics_service),
     # TODO: 添加用户认证
     current_user_id: int = 1  # 临时硬编码
 ):
@@ -146,12 +97,21 @@ async def get_statistics_overview(
     包含个人统计、近期趋势和步骤分析的完整数据
     适用于首页看板展示
     """
-    personal_stats = await get_user_statistics(current_user_id)
-    trend = await get_training_trend(current_user_id, days=days)
-    step_analysis = await get_step_analysis(current_user_id)
+    personal_stats = await stats_service.get_personal_statistics(current_user_id)
+    if not personal_stats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未找到该用户的统计数据"
+        )
+    
+    trend_data = await stats_service.get_training_trend(current_user_id, days=days)
+    step_analysis = await stats_service.get_step_analysis(current_user_id)
     
     return StatisticsOverviewResponse(
-        personal_stats=PersonalStatisticsResponse(**personal_stats),
-        recent_trend=TrainingTrendResponse(**trend),
-        step_analysis=StepAnalysisResponse(**step_analysis)
+        personal_stats=personal_stats,
+        recent_trend=TrainingTrendResponse(
+            trend_data=trend_data,
+            total_days=len(trend_data)
+        ),
+        step_analysis=StepAnalysisResponse(step_analysis=step_analysis)
     )
