@@ -6,6 +6,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Certs
+/certs/
+
 # Python
 __pycache__/
 *.py[cod]

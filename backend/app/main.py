@@ -33,6 +33,8 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
         "http://117.72.44.96:5173",  # 公网 IP
+        "https://117.72.44.96:5173",  # 公网 IP (HTTPS)
+        "https://localhost:5173",  # 本地 HTTPS
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from app.models.training_record import TrainingRecord
 from app.repositories.training_repository import TrainingRepository
 from app.schemas.training import TrainingStartRequest
+from app.services.scoring_service import ScoringService
 
 
 class TrainingService:
@@ -146,7 +147,7 @@ class TrainingService:
     
     async def generate_mock_score(self, training_type: str) -> dict:
         """
-        生成模拟分数（用于测试，后续替换为真实 AI 评分）
+        生成模拟分数（使用 ScoringService，后续替换为真实 AI 评分）
         
         Args:
             training_type: 训练类型
@@ -154,51 +155,25 @@ class TrainingService:
         Returns:
             评分结果字典
         """
-        import random
+        scoring_service = ScoringService()
+        result = await scoring_service.score_training(training_type=training_type)
         
-        # 模拟步骤分数
-        mock_step_scores = {
-            "step1": {
-                "step_name": "准备阶段",
-                "score": round(random.uniform(70, 100), 2),
-                "is_correct": random.choice([True, True, True, False]),
-                "feedback": "准备工作基本到位"
-            },
-            "step2": {
-                "step_name": "操作阶段",
-                "score": round(random.uniform(60, 100), 2),
-                "is_correct": random.choice([True, True, False]),
-                "feedback": "操作流程需要改进"
-            },
-            "step3": {
-                "step_name": "收尾阶段",
-                "score": round(random.uniform(80, 100), 2),
-                "is_correct": True,
-                "feedback": "收尾工作良好"
-            }
-        }
-        
-        # 计算总分（平均分）
-        total = sum(step["score"] for step in mock_step_scores.values())
-        avg_score = total / len(mock_step_scores)
-        
-        # 生成反馈
-        if avg_score >= 90:
-            feedback = "优秀！动作规范，流程熟练"
-        elif avg_score >= 80:
-            feedback = "良好！基本掌握操作要领"
-        elif avg_score >= 60:
-            feedback = "合格！但还有提升空间"
-        else:
-            feedback = "需要加强练习，注意操作规范"
+        # 将 Decimal 转换为 float，使其可以被 JSON 序列化
+        def convert_decimal_to_float(obj):
+            """递归转换对象中的 Decimal 为 float"""
+            if isinstance(obj, Decimal):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_decimal_to_float(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimal_to_float(item) for item in obj]
+            else:
+                return obj
         
         return {
-            "total_score": round(avg_score, 2),
-            "step_scores": mock_step_scores,
-            "feedback": feedback,
-            "suggestions": [
-                "建议多加练习操作步骤",
-                "注意动作的规范性",
-                "提高操作熟练度"
-            ]
+            "total_score": float(result["total_score"]),
+            "step_scores": convert_decimal_to_float(result["step_scores"]),
+            "feedback": result["feedback"],
+            "suggestions": result.get("suggestions", []),
+            "action_logs": convert_decimal_to_float(result.get("action_logs", []))
         }

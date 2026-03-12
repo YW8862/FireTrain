@@ -66,7 +66,17 @@ python scripts/init_db.py 2>/dev/null || echo "✅ 数据库已存在"
 
 # 启动服务
 echo "🌐 启动后端服务..."
-echo "📖 API 文档地址：http://localhost:8000/docs"
+echo "📖 API 文档地址：https://localhost:8000/docs"
 echo ""
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 检查 SSL 证书是否存在
+CERT_FILE="/home/yw/FireTrain/certs/cert.pem"
+KEY_FILE="/home/yw/FireTrain/certs/key.pem"
+
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+    echo "🔒 检测到 SSL 证书，启用 HTTPS..."
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --ssl-certfile="$CERT_FILE" --ssl-keyfile="$KEY_FILE"
+else
+    echo "⚠️  未检测到 SSL 证书，使用 HTTP（生产环境建议使用 HTTPS）..."
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+fi
