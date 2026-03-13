@@ -71,10 +71,51 @@ const handleLogin = async () => {
         userStore.setToken(res.token)
         userStore.setUserInfo(res.user_info)
         ElMessage.success('登录成功')
-        router.push('/training')
+        router.push('/')
       } catch (error) {
         console.error('登录失败:', error)
-        ElMessage.error(error.response?.data?.detail || '登录失败，请检查账号和密码')
+        
+        // 根据错误类型给出不同提示
+        let errorMsg = '登录失败'
+        
+        // 优先使用 request.js 中设置的自定义错误信息
+        if (error.customMessage) {
+          errorMsg = error.customMessage
+          if (error.suggestion) {
+            console.log('建议:', error.suggestion)
+          }
+        } else if (error.code === 'ERR_CERT_AUTHORITY_INVALID' || error.message?.includes('certificate')) {
+          errorMsg = 'SSL 证书错误，请检查服务器配置或使用 HTTP 连接'
+        } else if (!navigator.onLine) {
+          errorMsg = '网络连接已断开，请检查网络设置'
+        } else if (error.response) {
+          // 服务器返回了响应
+          const status = error.response.status
+          switch (status) {
+            case 401:
+              errorMsg = '账号或密码错误，请重新输入'
+              break
+            case 403:
+              errorMsg = '访问被拒绝，请联系管理员'
+              break
+            case 404:
+              errorMsg = '登录接口不存在'
+              break
+            case 500:
+              errorMsg = '服务器错误，请稍后重试'
+              break
+            default:
+              errorMsg = error.response.data?.detail || `登录失败 (${status})`
+          }
+        } else if (error.request) {
+          // 请求已发送但没有收到响应
+          errorMsg = '无法连接到服务器，请检查：\n1. 后端服务是否启动\n2. 网络连接是否正常\n3. 服务器地址是否正确'
+        } else {
+          // 其他错误
+          errorMsg = error.message || '未知错误，请稍后重试'
+        }
+        
+        ElMessage.error(errorMsg)
       } finally {
         loading.value = false
       }

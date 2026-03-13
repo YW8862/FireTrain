@@ -1,5 +1,8 @@
 <template>
   <div class="stats-container">
+    <!-- 顶部导航栏 -->
+    <NavBar />
+
     <el-card class="stats-card">
       <template #header>
         <div class="card-header">
@@ -69,46 +72,53 @@
         <!-- 步骤分析 -->
         <el-card shadow="hover" v-if="stepAnalysis && stepAnalysis.length > 0">
           <template #header>
-            <span>📋 各步骤表现分析</span>
+            <div class="card-header">
+              <span>📋 各步骤表现分析</span>
+            </div>
           </template>
-          <el-table :data="stepAnalysis" style="width: 100%">
-            <el-table-column prop="step_name" label="步骤名称" width="180" />
-            <el-table-column prop="average_score" label="平均分" width="100" sortable>
+          <el-table 
+            :data="stepAnalysis" 
+            style="width: 100%"
+            :cell-style="{ padding: '12px 8px' }"
+          >
+            <el-table-column prop="step_name" label="步骤名称" width="200" />
+            <el-table-column prop="average_score" label="平均分" width="120" sortable align="center">
               <template #default="{ row }">
-                <el-tag :type="getScoreTagType(row.average_score)">
+                <el-tag :type="getScoreTagType(row.average_score)" size="large">
                   {{ row.average_score }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="training_count" label="训练次数" width="100" />
-            <el-table-column prop="success_rate" label="成功率" width="100">
+            <el-table-column prop="training_count" label="训练次数" width="120" align="center" />
+            <el-table-column prop="success_rate" label="成功率" width="120" sortable align="center">
               <template #default="{ row }">
-                {{ (row.success_rate * 100).toFixed(1) }}%
+                <span class="success-rate">{{ (row.success_rate * 100).toFixed(1) }}%</span>
               </template>
             </el-table-column>
-            <el-table-column prop="suggestion" label="改进建议" />
+            <el-table-column prop="suggestion" label="改进建议" min-width="280">
+              <template #default="{ row }">
+                <span class="suggestion-text">{{ row.suggestion }}</span>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
-
-        <!-- 空状态 -->
-        <el-empty v-if="!loading && !stats.total_training_count" description="暂无训练数据，快去训练吧！">
-          <el-button type="primary" @click="goToTraining">开始训练</el-button>
-        </el-empty>
       </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
   getPersonalStatistics,
   getTrainingTrend,
-  getStepAnalysis
+  getStepAnalysis,
+  getTrainingHistory
 } from '@/api/statistics'
+import NavBar from '@/components/NavBar.vue'
 
 const router = useRouter()
 
@@ -141,11 +151,39 @@ const getScoreTagType = (score) => {
   return 'danger'
 }
 
+// 获取等级标签类型
+const getLevelTagType = (level) => {
+  const types = {
+    excellent: 'success',
+    good: 'success',
+    pass: 'warning',
+    fail: 'danger'
+  }
+  return types[level] || 'info'
+}
+
 // 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return '未训练'
   const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN')
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 获取等级文本
+const getLevelText = (level) => {
+  const map = {
+    excellent: '优秀',
+    good: '良好',
+    pass: '合格',
+    fail: '待改进'
+  }
+  return map[level] || '-'
 }
 
 // 加载所有数据
@@ -200,6 +238,11 @@ const loadStepAnalysis = async () => {
   }
 }
 
+// 跳转到训练页面
+const goToTraining = () => {
+  router.push('/training')
+}
+
 // 渲染趋势图（折线图）
 const renderTrendChart = (data) => {
   if (!trendChartRef.value) return
@@ -217,7 +260,21 @@ const renderTrendChart = (data) => {
       trigger: 'axis',
       axisPointer: {
         type: 'cross'
-      }
+      },
+      position: (point, params, dom, rect, size) => {
+        // 动态调整位置，避免被遮挡
+        let x = point[0] + 10
+        let y = point[1] - 40
+        
+        // 如果靠近顶部，显示在下方
+        if (y < 100) {
+          y = point[1] + 20
+        }
+        
+        return [x, y]
+      },
+      confine: false,
+      extraCssText: 'z-index: 10000;'
     },
     legend: {
       data: ['平均分数', '训练次数'],
@@ -290,7 +347,21 @@ const renderStepBarChart = (data) => {
       trigger: 'axis',
       axisPointer: {
         type: 'shadow'
-      }
+      },
+      position: (point, params, dom, rect, size) => {
+        // 动态调整位置，避免被遮挡
+        let x = point[0] + 10
+        let y = point[1] - 40
+        
+        // 如果靠近顶部，显示在下方
+        if (y < 100) {
+          y = point[1] + 20
+        }
+        
+        return [x, y]
+      },
+      confine: false,
+      extraCssText: 'z-index: 10000;'
     },
     xAxis: {
       type: 'category',
@@ -344,7 +415,63 @@ const renderRadarChart = (data) => {
   const values = data.map(item => parseFloat(item.average_score))
   
   const option = {
-    tooltip: {},
+    tooltip: {
+      trigger: 'item',
+      position: (point, params, dom, rect, size) => {
+        // 根据鼠标位置动态调整，确保完全可见
+        let x = point[0] + 15
+        let y = point[1] - 30
+        
+        // 如果靠近顶部，显示在下方
+        if (y < 120) {
+          y = point[1] + 20
+        }
+        
+        return [x, y]
+      },
+      confine: false,
+      backgroundColor: 'rgba(255, 255, 255, 0.98)',
+      borderColor: '#e2e8f0',
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: [12, 16],
+      extraCssText: 'z-index: 10000; box-shadow: 0 4px 16px rgba(0,0,0,0.15);',
+      formatter: (params) => {
+        const value = params.value
+        const name = params.name
+        const score = typeof value === 'number' ? value : parseFloat(value)
+        
+        // 获取等级和颜色
+        let level, color
+        if (score >= 90) {
+          level = '优秀'
+          color = '#67C23A'
+        } else if (score >= 80) {
+          level = '良好'
+          color = '#409EFF'
+        } else if (score >= 60) {
+          level = '合格'
+          color = '#E6A23C'
+        } else {
+          level = '待改进'
+          color = '#F56C6C'
+        }
+        
+        return `
+          <div style="font-weight: 600; margin-bottom: 8px; color: #303133; font-size: 14px;">${name}</div>
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">得分:</span>
+            <span style="font-weight: 600; color: ${color}; font-size: 15px;">${score}分</span>
+            
+            <span style="color: #64748b; font-size: 13px;">等级:</span>
+            <span style="color: ${color}; font-weight: 500; font-size: 13px;">${level}</span>
+            
+            <span style="color: #64748b; font-size: 13px;">满分:</span>
+            <span style="color: #303133; font-size: 13px;">100分</span>
+          </div>
+        `
+      }
+    },
     radar: {
       indicator: indicator,
       shape: 'circle',
@@ -373,11 +500,6 @@ const renderRadarChart = (data) => {
   radarChart.setOption(option)
 }
 
-// 跳转到训练页面
-const goToTraining = () => {
-  router.push('/training')
-}
-
 // 组件挂载时加载数据
 onMounted(() => {
   loadData()
@@ -402,22 +524,37 @@ onUnmounted(() => {
 .stats-container {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  padding: 30px 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .stats-card {
-  max-width: 1400px;
+  max-width: 1600px;
+  width: 100%;
   margin: 0 auto;
+  flex: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-bottom: 8px;
+}
+
+.card-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
 }
 
 .mb-4 {
-  margin-bottom: 1rem;
+  margin-bottom: 24px;
 }
 
 .chart-header {
@@ -426,13 +563,97 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.stats-content {
+  padding: 24px;
+}
+
+/* 统计卡片美化 */
+:deep(.el-statistic) {
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-statistic:hover) {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+}
+
+:deep(.el-statistic__title) {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+:deep(.el-statistic__content) {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* 表格美化 */
+:deep(.el-table) {
+  font-size: 15px;
+}
+
+:deep(.el-table th) {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+  color: #475569;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 14px 8px !important;
+}
+
+:deep(.el-table td) {
+  padding: 14px 8px !important;
+  color: #334155;
+}
+
+:deep(.el-table tr:hover) {
+  background-color: #f8fafc !important;
+}
+
+.success-rate {
+  font-weight: 600;
+  color: #059669;
+  font-size: 15px;
+}
+
+.suggestion-text {
+  color: #64748b;
+  line-height: 1.6;
+  display: block;
+}
+
 .chart-container {
-  height: 300px;
+  height: 350px;
   width: 100%;
 }
 
 .chart-container-small {
-  height: 250px;
+  height: 300px;
   width: 100%;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .stats-container {
+    padding: 15px;
+  }
+  
+  .card-header h1 {
+    font-size: 24px;
+  }
+  
+  :deep(.el-statistic) {
+    padding: 12px;
+  }
+  
+  :deep(.el-statistic__content) {
+    font-size: 24px;
+  }
 }
 </style>

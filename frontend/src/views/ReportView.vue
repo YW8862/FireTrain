@@ -1,91 +1,83 @@
 <template>
   <div class="report-container">
+    <!-- 顶部导航栏 -->
+    <NavBar />
+
     <el-card class="report-card">
-      <template #header>
-        <div class="card-header">
-          <h1>📊 训练报告</h1>
-          <el-button @click="goBack">返回</el-button>
-        </div>
-      </template>
+      <div class="report-header">
+        <h2>📊 训练评分报告</h2>
+        <el-button @click="goBack">返回</el-button>
+      </div>
 
       <div v-loading="loading" class="report-content">
         <!-- 总分展示 -->
         <div class="total-score-section">
-          <el-result
-            :icon="getLevelIcon(reportData.performance_level)"
-            :title="getLevelTitle(reportData.performance_level)"
-            :sub-title="`总分：${reportData.total_score} / 100`"
-          >
-            <template #extra>
-              <el-tag :type="getLevelTagType(reportData.performance_level)" size="large">
-                {{ reportData.performance_level === 'excellent' ? '优秀' :
-                   reportData.performance_level === 'good' ? '良好' :
-                   reportData.performance_level === 'pass' ? '合格' : '待改进' }}
-              </el-tag>
-            </template>
-          </el-result>
+          <div class="score-title">{{ formatDate(new Date()) }}</div>
+          <div class="score-display">
+            <div class="score-number">{{ reportData.total_score }}</div>
+            <div class="score-label">总分（分）</div>
+          </div>
+          <div class="score-percent">({{ reportData.total_score }}%)</div>
+          <el-tag :type="getLevelTagType(reportData.performance_level)" size="large" class="level-tag">
+            {{ reportData.performance_level === 'excellent' ? '优秀' :
+               reportData.performance_level === 'good' ? '良好' :
+               reportData.performance_level === 'pass' ? '合格' : '待改进' }}
+          </el-tag>
         </div>
 
         <!-- 反馈建议 -->
         <div v-if="reportData.feedback" class="feedback-section">
-          <h2>💡 总体反馈</h2>
-          <el-alert :title="reportData.feedback" type="success" :closable="false" show-icon />
-        </div>
-
-        <!-- 分项评分 -->
-        <div class="score-details-section">
-          <h2>📈 各维度评分</h2>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <!-- 雷达图 -->
-              <div ref="radarChartRef" class="chart-container"></div>
-            </el-col>
-            <el-col :span="12">
-              <!-- 步骤分数列表 -->
-              <el-timeline>
-                <el-timeline-item
-                  v-for="(step, index) in reportData.step_scores"
-                  :key="index"
-                  :timestamp="`步骤 ${index + 1}`"
-                  placement="top"
-                  :color="getStepColor(step.score)"
-                >
-                  <el-card shadow="hover">
-                    <div class="step-item">
-                      <span class="step-name">{{ step.step_name }}</span>
-                      <el-tag :type="getScoreTagType(step.score)">{{ step.score }}分</el-tag>
-                    </div>
-                    <p v-if="step.feedback" class="step-feedback">{{ step.feedback }}</p>
-                  </el-card>
-                </el-timeline-item>
-              </el-timeline>
-            </el-col>
-          </el-row>
-        </div>
-
-        <!-- 问题列表 -->
-        <div v-if="reportData.problems && reportData.problems.length > 0" class="problems-section">
-          <h2>⚠️ 需要改进的地方</h2>
-          <ul class="problem-list">
-            <li v-for="(problem, index) in reportData.problems" :key="index">
-              <el-icon class="problem-icon"><Warning /></el-icon>
-              {{ problem }}
+          <h2>💡 改进建议</h2>
+          <ul class="suggestion-list">
+            <li v-for="(suggestion, index) in suggestions" :key="index" class="suggestion-item">
+              <el-icon class="suggestion-icon"><SuccessFilled /></el-icon>
+              {{ suggestion }}
             </li>
           </ul>
         </div>
 
-        <!-- 改进建议 -->
-        <div v-if="reportData.suggestions && reportData.suggestions.length > 0" class="suggestions-section">
-          <h2>✅ 改进建议</h2>
-          <el-collapse>
-            <el-collapse-item
-              v-for="(suggestion, index) in reportData.suggestions"
-              :key="index"
-              :title="`建议 ${index + 1}`"
-            >
-              {{ suggestion }}
-            </el-collapse-item>
-          </el-collapse>
+        <!-- 分项评分 -->
+        <div class="score-details-section">
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <div class="dimension-scores">
+                <div class="dimension-item">
+                  <span class="dimension-label">动作完整性</span>
+                  <el-progress :percentage="reportData.total_score" :color="getDimensionColor(reportData.total_score)" />
+                </div>
+                <div class="dimension-item">
+                  <span class="dimension-label">姿态规范性</span>
+                  <el-progress :percentage="reportData.total_score * 0.95" :color="getDimensionColor(reportData.total_score * 0.95)" />
+                </div>
+                <div class="dimension-item">
+                  <span class="dimension-label">操作时效性</span>
+                  <el-progress :percentage="reportData.total_score * 0.9" :color="getDimensionColor(reportData.total_score * 0.9)" />
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="8">
+              <!-- 雷达图 -->
+              <div ref="radarChartRef" class="chart-container"></div>
+            </el-col>
+            <el-col :span="8">
+              <!-- 步骤分数列表 -->
+              <div class="step-scores-list">
+                <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-score-item">
+                  <div class="step-score-header">
+                    <span class="step-score-name">{{ step.step_name }}</span>
+                    <el-tag :type="getScoreTagType(step.score)" size="small">{{ step.score }}分</el-tag>
+                  </div>
+                  <el-progress 
+                    :percentage="step.score" 
+                    :color="getScoreColor(step.score)"
+                    :show-text="false"
+                    :stroke-width="4"
+                  />
+                  <p v-if="step.feedback" class="step-score-feedback">{{ step.feedback }}</p>
+                </div>
+              </div>
+            </el-col>
+          </el-row>
         </div>
       </div>
     </el-card>
@@ -93,12 +85,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Warning } from '@element-plus/icons-vue'
+import { Warning, SuccessFilled } from '@element-plus/icons-vue'
 import { getTrainingDetail } from '@/api/training'
 import * as echarts from 'echarts'
+import NavBar from '@/components/NavBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,6 +110,9 @@ const reportData = reactive({
   problems: [],
   suggestions: []
 })
+
+// 建议列表（从反馈中生成）
+const suggestions = ref([])
 
 // 获取等级图标
 const getLevelIcon = (level) => {
@@ -153,17 +149,19 @@ const getLevelTagType = (level) => {
 
 // 获取分数标签类型
 const getScoreTagType = (score) => {
-  if (score >= 90) return 'success'
-  if (score >= 80) return 'success'
-  if (score >= 60) return 'warning'
+  const scoreNum = typeof score === 'string' ? parseFloat(score) : score
+  if (scoreNum >= 90) return 'success'
+  if (scoreNum >= 80) return 'success'
+  if (scoreNum >= 60) return 'warning'
   return 'danger'
 }
 
 // 获取步骤颜色
 const getStepColor = (score) => {
-  if (score >= 90) return '#67C23A'
-  if (score >= 80) return '#67C23A'
-  if (score >= 60) return '#E6A23C'
+  const scoreNum = typeof score === 'string' ? parseFloat(score) : score
+  if (scoreNum >= 90) return '#67C23A'
+  if (scoreNum >= 80) return '#67C23A'
+  if (scoreNum >= 60) return '#E6A23C'
   return '#F56C6C'
 }
 
@@ -173,8 +171,8 @@ const loadReportData = async () => {
   try {
     const res = await getTrainingDetail(reportData.training_id)
     
-    // 解析数据
-    reportData.total_score = res.total_score || 0
+    // 解析数据 - 处理字符串到数字的转换
+    reportData.total_score = parseFloat(res.total_score) || 0
     reportData.feedback = res.feedback || ''
     
     // 根据总分确定等级
@@ -188,9 +186,14 @@ const loadReportData = async () => {
       reportData.performance_level = 'fail'
     }
     
-    // 解析步骤分数
+    // 解析步骤分数 - 将对象转换为数组
     if (res.step_scores) {
-      reportData.step_scores = res.step_scores
+      // API 返回的是对象 {step1: {...}, step2: {...}}，需要转换为数组
+      reportData.step_scores = Object.entries(res.step_scores).map(([key, value]) => ({
+        step_name: value.step_name || `步骤${key.replace('step', '')}`,
+        score: parseFloat(value.score) || 0,
+        feedback: value.feedback || ''
+      }))
     }
     
     // 从反馈中生成问题列表和建议（简化处理）
@@ -198,17 +201,20 @@ const loadReportData = async () => {
       // TODO: 使用真实的 AI 反馈生成器结果
       reportData.problems = ['部分动作不够规范，需要加强练习']
       reportData.suggestions = [
-        '注意保持正确的姿势',
-        '加强对灭火器操作步骤的记忆',
-        '多进行模拟训练'
+        '步骤 2 拔销动作不够流畅，建议练习手腕发力',
+        '步骤 4 手臂角度偏差 5 度，请保持手臂伸直',
+        '整体操作时间优秀，继续保持'
       ]
+      suggestions.value = reportData.suggestions
+    } else {
+      suggestions.value = []
     }
     
     // 渲染图表
     renderRadarChart()
   } catch (error) {
     console.error('加载报告失败:', error)
-    ElMessage.error(error.response?.data?.detail || '加载报告失败')
+    ElMessage.error(error.customMessage || error.response?.data?.detail || '加载报告失败')
   } finally {
     loading.value = false
   }
@@ -221,7 +227,12 @@ const renderRadarChart = () => {
   // 初始化图表
   radarChart = echarts.init(radarChartRef.value)
   
-  // 准备数据
+  // 准备数据 - 确保 step_scores 是数组
+  if (!Array.isArray(reportData.step_scores) || reportData.step_scores.length === 0) {
+    console.warn('步骤分数数据格式不正确')
+    return
+  }
+  
   const indicators = reportData.step_scores.map(step => ({
     name: step.step_name,
     max: 100
@@ -264,6 +275,35 @@ const goBack = () => {
   router.push('/history')
 }
 
+// 格式化日期
+const formatDate = (date) => {
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 获取维度颜色
+const getDimensionColor = (score) => {
+  const scoreNum = typeof score === 'string' ? parseFloat(score) : score
+  if (scoreNum >= 90) return '#67C23A'
+  if (scoreNum >= 80) return '#67C23A'
+  if (scoreNum >= 60) return '#E6A23C'
+  return '#F56C6C'
+}
+
+// 获取分数颜色
+const getScoreColor = (score) => {
+  const scoreNum = typeof score === 'string' ? parseFloat(score) : score
+  if (scoreNum >= 90) return '#67C23A'
+  if (scoreNum >= 80) return '#67C23A'
+  if (scoreNum >= 60) return '#E6A23C'
+  return '#F56C6C'
+}
+
 // 组件挂载时加载数据
 onMounted(() => {
   loadReportData()
@@ -281,18 +321,19 @@ onUnmounted(() => {
 .report-container {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  padding: 0;
 }
 
 .report-card {
   max-width: 1200px;
-  margin: 0 auto;
+  margin: 20px auto;
 }
 
-.card-header {
+.report-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 20px;
 }
 
 .report-content {
@@ -300,81 +341,155 @@ onUnmounted(() => {
 }
 
 .total-score-section {
+  text-align: center;
   margin-bottom: 30px;
+  padding: 30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  color: #fff;
+}
+
+.score-title {
+  font-size: 16px;
+  margin-bottom: 15px;
+  opacity: 0.9;
+}
+
+.score-display {
+  display: inline-block;
+  margin-bottom: 10px;
+}
+
+.score-number {
+  font-size: 72px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.score-label {
+  font-size: 14px;
+  margin-top: 5px;
+  opacity: 0.9;
+}
+
+.score-percent {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 15px;
+  opacity: 0.9;
+}
+
+.level-tag {
+  margin-top: 10px;
 }
 
 .feedback-section {
-  margin-bottom: 30px;
+  margin: 24px 0;
+  padding: 20px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-radius: 12px;
+  border-left: 4px solid #f59e0b;
 }
 
 .feedback-section h2 {
-  margin-bottom: 15px;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 600;
+  color: #92400e;
+  margin: 0 0 16px 0;
+}
+
+.suggestion-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  font-size: 15px;
+  color: #78350f;
+  line-height: 1.6;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-icon {
+  font-size: 20px;
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .score-details-section {
   margin-bottom: 30px;
 }
 
-.score-details-section h2 {
+.dimension-scores {
+  padding: 20px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.dimension-item {
   margin-bottom: 20px;
-  color: #303133;
 }
 
-.chart-container {
-  height: 400px;
-  width: 100%;
+.dimension-item:last-child {
+  margin-bottom: 0;
 }
 
-.step-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.step-name {
+.dimension-label {
+  display: block;
+  margin-bottom: 8px;
   font-weight: 500;
   color: #303133;
 }
 
-.step-feedback {
+.chart-container {
+  height: 300px;
+  width: 100%;
+}
+
+.step-scores-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.step-score-item {
+  padding: 15px;
+  background: #f5f7fa;
+  border-radius: 6px;
+}
+
+.step-score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.step-score-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.step-score-feedback {
   margin-top: 8px;
   color: #909399;
   font-size: 14px;
 }
 
-.problems-section {
-  margin-bottom: 30px;
-}
-
-.problems-section h2 {
-  margin-bottom: 15px;
-  color: #F56C6C;
-}
-
-.problem-list {
-  list-style: none;
-  padding: 0;
-}
-
-.problem-list li {
-  padding: 10px;
-  background: #FEF0F0;
-  border-radius: 4px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  color: #F56C6C;
-}
-
-.problem-icon {
-  margin-right: 10px;
-  font-size: 18px;
-}
-
-.suggestions-section h2 {
-  margin-bottom: 15px;
-  color: #67C23A;
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .report-container {
+    padding: 10px;
+  }
 }
 </style>

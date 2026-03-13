@@ -41,3 +41,15 @@ export function getStatisticsOverview(days = 7) {
     method: 'get'
   })
 }
+
+/**
+ * 获取训练历史记录
+ * @param {Object} params - 查询参数
+ */
+export function getTrainingHistory(params) {
+  return request({
+    url: '/training/history',
+    method: 'get',
+    params
+  })
+}

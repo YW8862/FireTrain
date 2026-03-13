@@ -3,9 +3,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    name: 'Demo',
-    component: () => import('@/views/Demo.vue'),
-    meta: { title: '首页 Demo' }
+    name: 'Home',
+    component: () => import('@/views/HomeView.vue'),
+    meta: { title: '首页' }
   },
   {
     path: '/login',
@@ -38,12 +38,6 @@ const routes = [
     meta: { title: '训练历史', requiresAuth: true }
   },
   {
-    path: '/profile',
-    name: 'Profile',
-    component: () => import('@/views/ProfileView.vue'),
-    meta: { title: '个人中心', requiresAuth: true }
-  },
-  {
     path: '/stats',
     name: 'Stats',
     component: () => import('@/views/StatsView.vue'),
@@ -57,16 +51,14 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, from) => {
   // 设置页面标题
   document.title = to.meta.title ? `${to.meta.title} - FireTrain` : 'FireTrain'
   
   // 检查是否需要登录
   const token = localStorage.getItem('token')
   if (to.meta.requiresAuth && !token) {
-    next('/login')
-  } else {
-    next()
+    return '/login'
   }
 })
 

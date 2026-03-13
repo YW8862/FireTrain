@@ -1,5 +1,8 @@
 <template>
   <div class="history-container">
+    <!-- 顶部导航栏 -->
+    <NavBar />
+
     <el-card class="history-card">
       <template #header>
         <div class="card-header">
@@ -101,6 +104,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTrainingHistory } from '@/api/training'
+import NavBar from '@/components/NavBar.vue'
 
 const router = useRouter()
 
@@ -108,7 +112,7 @@ const loading = ref(false)
 
 // 查询表单
 const queryForm = reactive({
-  status: ''
+  status: '' // 默认不筛选，可以显示所有状态的记录
 })
 
 // 分页信息
@@ -174,6 +178,7 @@ const loadHistory = async () => {
       page_size: pagination.page_size
     }
     
+    // 只在用户选择了状态时才传递 status 参数
     if (queryForm.status) {
       params.status = queryForm.status
     }
@@ -184,7 +189,7 @@ const loadHistory = async () => {
     pagination.total = res.total || 0
   } catch (error) {
     console.error('加载历史记录失败:', error)
-    ElMessage.error(error.response?.data?.detail || '加载历史记录失败')
+    ElMessage.error(error.customMessage || error.response?.data?.detail || '加载历史记录失败')
   } finally {
     loading.value = false
   }
@@ -211,11 +216,14 @@ onMounted(() => {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .history-card {
   max-width: 1400px;
   margin: 0 auto;
+  flex: 1;
 }
 
 .card-header {
@@ -232,5 +240,12 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: center;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .history-container {
+    padding: 10px;
+  }
 }
 </style>

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import users_router, training_router, statistics_router
 from app.middleware import setup_request_logging, setup_exception_handlers
 from app.core.security import get_current_user_id
+from app.services.cleanup_service import setup_cleanup_task
 
 # 配置日志
 logging.basicConfig(
@@ -43,6 +44,9 @@ app.add_middleware(
 
 # 添加请求日志中间件
 setup_request_logging(app)
+
+# 设置定时清理任务
+setup_cleanup_task(app)
 
 # 注册路由
 app.include_router(users_router)
