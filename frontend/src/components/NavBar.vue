@@ -1,14 +1,12 @@
 <template>
-  <div class="top-nav" v-if="visible">
+  <div v-if="visible" class="top-nav">
     <h1 @click="goToHome" class="logo-title">🔥 消防技能训练系统</h1>
     <div class="nav-links">
-      <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">首页</router-link>
-      <router-link to="/training" class="nav-item" :class="{ active: isActive('/training') }">训练</router-link>
-      <router-link to="/history" class="nav-item" :class="{ active: isActive('/history') }">历史</router-link>
-      <router-link to="/stats" class="nav-item" :class="{ active: isActive('/stats') }">统计</router-link>
-      
-      <!-- 用户下拉菜单 -->
-      <el-dropdown @command="handleCommand" class="user-dropdown" v-if="isLoggedIn">
+      <router-link to="/" class="nav-item" active-class="active" exact>首页</router-link>
+      <router-link to="/training" class="nav-item" active-class="active">训练</router-link>
+      <router-link to="/history" class="nav-item" active-class="active">历史</router-link>
+      <router-link to="/stats" class="nav-item" active-class="active">统计</router-link>
+      <el-dropdown @command="handleCommand" class="user-dropdown">
         <span class="user-info">
           <el-avatar :size="32" icon="UserFilled" />
           <span class="user-name">{{ userName }}</span>
@@ -16,6 +14,7 @@
         </span>
         <template #dropdown>
           <el-dropdown-menu>
+            <el-dropdown-item command="profile">个人中心</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -26,12 +25,15 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, UserFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 
-// 定义 props - 控制导航栏是否可见
+const router = useRouter()
+const userStore = useUserStore()
+
+// 属性
 defineProps({
   visible: {
     type: Boolean,
@@ -39,30 +41,25 @@ defineProps({
   }
 })
 
-const router = useRouter()
-const route = useRoute()
-const userStore = useUserStore()
-
 // 用户信息
-const isLoggedIn = computed(() => !!localStorage.getItem('token'))
 const userName = computed(() => {
   return userStore.user?.username || '用户'
 })
 
-// 判断当前路由
-const isActive = (path) => {
-  return route.path === path
-}
-
-// 跳转到首页
+// 返回首页
 const goToHome = () => {
   router.push('/')
 }
 
 // 处理下拉菜单命令
 const handleCommand = (command) => {
-  if (command === 'logout') {
-    handleLogout()
+  switch (command) {
+    case 'profile':
+      router.push('/profile')
+      break
+    case 'logout':
+      handleLogout()
+      break
   }
 }
 
@@ -82,46 +79,60 @@ const handleLogout = () => {
 
 <style scoped>
 .top-nav {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 15px 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  flex-shrink: 0;
+  padding: 20px 40px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.top-nav h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.top-nav h1:hover {
+  color: #409EFF;
+  transform: scale(1.02);
 }
 
 .logo-title {
-  margin: 0;
-  font-size: 24px;
-  color: #303133;
   cursor: pointer;
-  transition: opacity 0.3s;
-}
-
-.logo-title:hover {
-  opacity: 0.8;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
 }
 
 .nav-item {
-  color: #606266;
   text-decoration: none;
+  color: #606266;
+  font-size: 16px;
   font-weight: 500;
-  transition: all 0.3s;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
 }
 
-.nav-item:hover,
-.nav-item.active {
+.nav-item:hover {
+  background: #f5f7fa;
   color: #409EFF;
-  background: #ecf5ff;
+}
+
+.nav-item.active {
+  background: #409EFF;
+  color: #fff;
 }
 
 .user-dropdown {
@@ -132,37 +143,42 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 4px;
-  transition: background 0.3s;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
 }
 
 .user-info:hover {
-  background: #f5f5f5;
+  background: #f5f7fa;
 }
 
 .user-name {
+  font-size: 14px;
+  color: #606266;
   font-weight: 500;
-  color: #303133;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .top-nav {
-    padding: 15px 20px;
-  }
-
-  .logo-title {
-    font-size: 20px;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
   }
 
   .nav-links {
-    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .top-nav h1 {
+    font-size: 20px;
   }
 
   .nav-item {
-    padding: 6px 12px;
     font-size: 14px;
+    padding: 6px 12px;
   }
 
   .user-name {

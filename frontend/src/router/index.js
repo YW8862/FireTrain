@@ -38,6 +38,12 @@ const routes = [
     meta: { title: '训练历史', requiresAuth: true }
   },
   {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/ProfileView.vue'),
+    meta: { title: '个人中心', requiresAuth: true }
+  },
+  {
     path: '/stats',
     name: 'Stats',
     component: () => import('@/views/StatsView.vue'),
@@ -51,7 +57,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from) => {
+router.beforeEach((to, _from) => {
   // 设置页面标题
   document.title = to.meta.title ? `${to.meta.title} - FireTrain` : 'FireTrain'
   

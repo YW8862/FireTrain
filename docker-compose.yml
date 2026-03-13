@@ -32,7 +32,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite:///./fire_training.db
+      - DATABASE_URL=sqlite+aiosqlite:///./fire_training.db
       - JWT_SECRET_KEY=dev-secret-key-not-for-production
       - LOG_LEVEL=DEBUG
       - DEBUG=true
@@ -57,9 +57,10 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_BASE_URL=https://localhost:8000/api
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://localhost:8000/api}
     volumes:
       - ./frontend:/app
+      - ./certs:/certs
     networks:
       - firetrain-network
 

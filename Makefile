@@ -1,4 +1,4 @@
-.PHONY: help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-frontend run-local docker-up docker-down
+.PHONY: help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-frontend run-local docker-up docker-down docker-logs docker-restart docker-status
 
 help:
 	@echo "Available commands:"
@@ -10,8 +10,11 @@ help:
 	@echo "  make lint        - Run backend and frontend linters"
 	@echo "  make test        - Run backend and frontend tests"
 	@echo "  make run-local   - Placeholder local run command"
-	@echo "  make docker-up   - Start docker compose services"
+	@echo "  make docker-up   - Start docker compose services (后台运行)"
 	@echo "  make docker-down - Stop docker compose services"
+	@echo "  make docker-logs - View service logs"
+	@echo "  make docker-restart - Restart services"
+	@echo "  make docker-status - Check service status"
 
 tree:
 	@echo "Project structure:"
@@ -64,6 +67,21 @@ run-local:
 
 docker-up:
 	docker compose up -d
+	@echo "✅ 服务已在后台启动"
+	@echo "📊 查看日志：docker compose logs -f"
+	@echo "🛑 停止服务：make docker-down"
+	docker compose ps
 
 docker-down:
 	docker compose down
+	@echo "✅ 服务已停止"
+
+docker-logs:
+	docker compose logs -f
+
+docker-restart:
+	docker compose restart
+	@echo "✅ 服务已重启"
+
+docker-status:
+	docker compose ps

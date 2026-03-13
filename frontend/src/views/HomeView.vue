@@ -1,9 +1,5 @@
 <template>
   <div class="home-container">
-    <!-- 顶部导航栏 -->
-    <NavBar />
-
-    <!-- 主内容区 -->
     <div class="main-content">
       <el-card class="welcome-card">
         <div class="welcome-content">
@@ -66,11 +62,27 @@
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import NavBar from '@/components/NavBar.vue'
+import { 
+  VideoCamera, 
+  DocumentChecked, 
+  DataLine,
+  VideoPlay,
+  Document,
+  ArrowDown,
+  UserFilled
+} from '@element-plus/icons-vue'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
+
+// 用户信息
+const userName = computed(() => {
+  return userStore.user?.username || '用户'
+})
 
 // 跳转到训练页面
 const goToTraining = () => {
