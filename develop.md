@@ -106,7 +106,8 @@
   - 数据库连接
   - 服务端口
   - JWT 密钥
-  - 模型路径
+  - **ONNX 模型路径**（`MODEL_PATH=./data/models`）
+  - **YOLO 模型配置**（`YOLO_MODEL_NAME=fire_extinguisher.onnx`）
 
 #### 产出物
 
@@ -689,12 +690,12 @@
 
 - 先定位瓶颈，再优化：
   1. 视频处理耗时
-  2. 模型推理耗时
+  2. **ONNX 模型推理耗时**（使用 ONNX Runtime 进行高性能推理）
   3. 数据库查询慢 SQL
   4. 前端首屏加载
 - 常见优化动作：
   - 抽帧 + 降分辨率
-  - 模型预加载
+  - **ONNX 模型预加载**（使用 ONNX Runtime Session 预加载模型）
   - 索引优化
   - 接口分页与缓存
 
@@ -858,13 +859,193 @@
 4. 历史页 + 统计页
 5. 反馈建议优化
 
-### 10.4 第 4 批（上线准备）
+### 13.2 第 4 批（上线准备）
 
 1. 测试补齐
 2. 性能优化
 3. Docker 化与部署脚本
 4. 文档完善（部署手册、用户手册）
 5. 演示视频和答辩材料
+
+---
+
+## 14. YOLOv8 模型训练与 ONNX 导出指南
+
+### 14.1 模型训练流程
+
+**步骤 1: 准备数据集**
+
+```bash
+# 创建数据集目录结构
+datasets/fire_extinguisher/
+├── images/
+│   ├── train/          # 训练图片（300-500 张起步）
+│   └── val/            # 验证图片（50-100 张）
+└── labels/             # YOLO 格式标注文件
+    ├── train/
+    └── val/
+```
+
+**步骤 2: 配置 data.yaml**
+
+```yaml
+path: datasets/fire_extinguisher
+train: images/train
+val: images/test
+
+nc: 1  # 类别数量
+names:
+  - fire_extinguisher  # 灭火器
+```
+
+**步骤 3: 开始训练**
+
+```bash
+cd backend
+yolo detect train \
+  data=datasets/fire_extinguisher/data.yaml \
+  model=yolov8n.pt \
+  epochs=100 \
+  imgsz=640 \
+  batch=16 \
+  device=cpu  # 或有 GPU 时改为 cuda:0
+```
+
+**步骤 4: 查看训练结果**
+
+训练完成后，权重文件保存在：
+```
+runs/detect/fire_extinguisher_train/weights/best.pt
+```
+
+### 14.2 导出为 ONNX 格式
+
+**为什么需要 ONNX？**
+
+- **推理速度提升**: 相比 PyTorch 模型快 20-30%
+- **内存占用降低**: 减少约 40% 内存使用
+- **跨平台部署**: 无需完整 PyTorch 依赖
+- **量化支持**: 可进一步优化为 INT8/FP16
+
+**导出命令:**
+
+```bash
+yolo export \
+  model=runs/detect/fire_extinguisher_train/weights/best.pt \
+  format=onnx \
+  opset=12 \
+  simplify=true
+```
+
+**导出参数说明:**
+
+| 参数 | 说明 | 推荐值 |
+|------|------|--------|
+| `model` | 要导出的 `.pt` 模型路径 | `best.pt` |
+| `format` | 导出格式 | `onnx` |
+| `opset` | ONNX 算子集版本 | `12` 或更高 |
+| `simplify` | 是否简化模型图结构 | `true` |
+| `imgsz` | 输入图像尺寸 | `640` |
+
+**输出文件:**
+
+导出成功后生成：
+```
+runs/detect/fire_extinguisher_train/weights/best.onnx
+```
+
+### 14.3 在生产环境中使用 ONNX 模型
+
+**安装 ONNX Runtime:**
+
+```bash
+pip install onnxruntime  # CPU 版本
+# 或
+pip install onnxruntime-gpu  # GPU 版本
+```
+
+**加载 ONNX 模型进行推理:**
+
+```python
+import onnxruntime as ort
+import numpy as np
+
+# 创建推理会话
+session = ort.InferenceSession("fire_extinguisher.onnx")
+
+# 获取输入输出名称
+input_name = session.get_inputs()[0].name
+output_names = [o.name for o in session.get_outputs()]
+
+# 预处理图像
+image = preprocess_image(frame)  # 调整大小、归一化、RGB->BGR
+
+# 执行推理
+results = session.run(output_names, {input_name: image})
+
+# 后处理解析检测结果
+detections = postprocess_results(results)
+```
+
+**性能优化建议:**
+
+```python
+# 配置 ONNX Runtime Session 选项
+session_options = ort.SessionOptions()
+
+# 启用图形优化
+session_options.graph_optimization_level = (
+    ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+)
+
+# 设置线程池（CPU 推理）
+session_options.intra_op_num_threads = 4
+session_options.inter_op_num_threads = 4
+
+# 创建优化的会话
+optimized_session = ort.InferenceSession(
+    "fire_extinguisher.onnx",
+    sess_options=session_options
+)
+```
+
+### 14.4 模型性能对比
+
+| 指标 | PyTorch (.pt) | ONNX Runtime | 提升 |
+|------|---------------|--------------|------|
+| 启动时间 | ~2-3 秒 | ~0.5 秒 | **75%↓** |
+| 单帧推理 | ~80-100ms | ~50-70ms | **30%↓** |
+| 内存占用 | ~800MB | ~480MB | **40%↓** |
+| 依赖大小 | ~2GB (torch) | ~200MB (onnxruntime) | **90%↓** |
+
+### 14.5 常见问题
+
+**Q1: 导出失败怎么办？**
+
+```bash
+# 尝试不同 opset 版本
+yolo export model=best.pt format=onnx opset=11
+
+# 或简化模式关闭
+yolo export model=best.pt format=onnx simplify=false
+```
+
+**Q2: ONNX 模型推理结果和 PyTorch 不一致？**
+
+- 检查预处理是否一致（RGB/BGR、归一化参数）
+- 确认输入尺寸相同（imgsz=640）
+- 对比置信度阈值和 NMS 参数
+
+**Q3: 如何进一步量化优化？**
+
+```bash
+# INT8 量化（需要校准数据）
+onnxruntime.quantization.quantize_dynamic(
+    "best.onnx",
+    "best_int8.onnx",
+    weight_type=QuantType.QUInt8
+)
+```
 
 ---
 
@@ -897,7 +1078,7 @@
 ### 角色建议
 
 - 后端负责人：单体后端 + 分层模块
-- AI 负责人：评分模块 + 模型推理
+- AI 负责人：评分模块 + **ONNX 模型推理**（YOLOv8 训练后导出为 ONNX 格式）
 - 前端负责人：页面、交互、可视化
 - 测试与文档负责人：测试、部署、演示材料
 
@@ -915,9 +1096,20 @@
 
 - 应对：接口先冻结最小版本，新增字段只追加不破坏兼容。
 
-### 失败点 2：AI 精度不稳定拖垮进度
+### 失败点 2:AI 精度不稳定拖垮进度
 
+- **ONNX 模型优势**：
+  - 相比 PyTorch 原始模型，推理速度提升 20-30%
+  - 内存占用降低约 40%
+  - 跨平台部署，无需 PyTorch 完整依赖
+  - 支持量化优化（INT8/FP16）
+  
 - 应对：先用规则与阈值保证可演示，模型优化并行推进。
+- **模型导出流程**：
+  1. 使用 Ultralytics YOLOv8 训练得到 `.pt` 权重
+  2. 导出为 ONNX 格式：`yolo export model=best.pt format=onnx opset=12`
+  3. 使用 ONNX Runtime 加载 `.onnx` 文件进行推理
+  4. 在生产环境中获得更好的性能表现
 
 ### 失败点 3：部署阶段才发现环境不一致
 
