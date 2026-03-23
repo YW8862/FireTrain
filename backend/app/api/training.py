@@ -1,11 +1,12 @@
 """训练相关的 API 路由"""
 import os
+import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -20,7 +21,42 @@ from app.schemas.training import (
     TrainingUploadRequest,
 )
 
+# 配置日志
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/training", tags=["训练管理"])
+
+
+# ============ 响应模型 ============
+
+class StepScoreDetail(BaseModel):
+    """步骤分数详情"""
+    step_name: str = Field(..., description="步骤名称")
+    score: float = Field(..., description="分数 (0-100)")
+    is_correct: bool = Field(..., description="是否正确")
+    feedback: str = Field(..., description="反馈信息")
+    weight: float = Field(default=1.0, description="权重")
+
+
+class ScoringDetails(BaseModel):
+    """评分详情"""
+    total_score: float = Field(..., description="总分")
+    step_scores: Dict[str, Any] = Field(default={}, description="步骤分数")
+    feedback: str = Field(..., description="总体反馈")
+    suggestions: List[str] = Field(default=[], description="改进建议")
+    performance_level: Optional[str] = Field(None, description="表现等级")
+    dimension_scores: Optional[Dict[str, Any]] = Field(None, description="维度分数")
+
+
+class TrainingCompleteResponse(BaseModel):
+    """完成训练响应（支持 AI 评分）"""
+    message: str = Field(..., description="响应消息")
+    training_id: int = Field(..., description="训练记录 ID")
+    status: str = Field(..., description="训练状态")
+    total_score: float = Field(..., description="总分")
+    feedback: str = Field(..., description="反馈信息")
+    used_ai_scoring: bool = Field(..., description="是否使用 AI 评分")
+    scoring_details: ScoringDetails = Field(..., description="评分详情")
 
 
 # OAuth2 scheme for token authentication（简化版，实际应该解析 JWT）
@@ -170,16 +206,49 @@ async def upload_video_file(
         )
 
 
-@router.post("/complete/{training_id}")
+@router.post("/complete/{training_id}", response_model=TrainingCompleteResponse)
 async def complete_training(
     training_id: int,
+    use_ai_scoring: bool = True,  # 新增参数：是否使用 AI 评分
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id)
 ):
     """
-    完成训练并计算分数
+    完成训练并计算分数（支持 AI 评分）
     
-    当前使用模拟分数，后续会接入真实 AI 评分
+    - **training_id**: 训练记录 ID
+    - **use_ai_scoring**: 是否使用 AI 评分（默认 True）
+    
+    如果 use_ai_scoring=True 且有视频文件，将使用 AI 模型分析视频：
+    1. YOLOv8 目标检测
+    2. MediaPipe 姿态分析
+    3. 规则引擎综合评分
+    
+    否则使用模拟评分（基于规则和随机性）
+    
+    ## 响应示例
+    ```json
+    {
+      "message": "训练已完成",
+      "training_id": 1,
+      "status": "done",
+      "total_score": 85.5,
+      "feedback": "优秀！动作规范，流程熟练，继续保持",
+      "used_ai_scoring": true,
+      "scoring_details": {
+        "total_score": 85.5,
+        "step_scores": {...},
+        "feedback": "...",
+        "suggestions": [...]
+      }
+    }
+    ```
+    
+    ## 异常处理
+    - 404: 训练记录不存在
+    - 403: 无权操作此训练记录
+    - 400: 当前状态不能完成训练/视频路径为空
+    - 500: AI 推理失败（已降级到模拟评分）
     """
     training_repo = TrainingRepository(db)
     training_service = TrainingService(training_repo)
@@ -192,7 +261,7 @@ async def complete_training(
             detail="训练记录不存在"
         )
     
-    # 验证用户权限
+    # 验证用户权限（参考 system.md 第 3.4.5 节）
     if training.user_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -200,29 +269,40 @@ async def complete_training(
         )
     
     try:
-        # 生成模拟分数
-        scoring_result = await training_service.generate_mock_score(training.training_type)
-        
-        # 保存评分结果
-        updated_training = await training_service.complete_training_with_score(
+        # 使用 AI 分析或直接模拟评分
+        result = await training_service.complete_training_with_ai_analysis(
             training_id=training_id,
-            total_score=scoring_result["total_score"],
-            step_scores=scoring_result["step_scores"],
-            feedback=scoring_result["feedback"]
+            use_ai_scoring=use_ai_scoring
         )
         
-        return {
-            "message": "训练已完成",
-            "training_id": training_id,
-            "status": updated_training.status,
-            "total_score": float(updated_training.total_score),
-            "feedback": updated_training.feedback,
-            "scoring_details": scoring_result
-        }
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="训练记录不存在"
+            )
+        
+        # 返回标准化响应（参考 system.md 第 4.2.5 节）
+        return TrainingCompleteResponse(
+            message="训练已完成",
+            training_id=training_id,
+            status=result["status"],
+            total_score=result["total_score"],
+            feedback=result["feedback"],
+            used_ai_scoring=result["used_ai_scoring"],
+            scoring_details=result["scoring_result"]
+        )
     except ValueError as e:
+        # 业务逻辑异常（参考 system.md 第 3.4.5 节）
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        # 未知异常（降级处理）
+        logger.error(f"完成训练时发生异常：{e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"训练完成失败：{str(e)}"
         )
 
 

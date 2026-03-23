@@ -132,3 +132,51 @@ class UserService:
         update_dict = update_data.model_dump(exclude_unset=True)
         updated_user = await self.user_repo.update(user, update_dict)
         return updated_user
+    
+    async def switch_role(self, user_id: int, target_role: str) -> dict:
+        """
+        切换用户角色（临时）
+        
+        Args:
+            user_id: 用户 ID
+            target_role: 目标角色 ("user" 或 "admin")
+            
+        Returns:
+            新的用户信息
+            
+        Raises:
+            ValueError: 当用户不允许切换或角色不支持时
+        """
+        from app.models.user import User
+        
+        # 获取用户
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise ValueError("用户不存在")
+        
+        # 验证是否允许切换
+        if not user.can_switch_role:
+            raise ValueError("该用户不允许切换角色")
+        
+        # 仅允许在 user 和 admin 之间切换
+        if target_role not in ["user", "admin"]:
+            raise ValueError("不支持的角色切换")
+        
+        # 保存原始角色
+        if target_role == "user":
+            # 切换到用户模式
+            user.original_role = user.role
+            user.role = "user"
+        else:
+            # 恢复管理员角色
+            user.role = user.original_role or "admin"
+            user.original_role = None
+        
+        # 更新数据库
+        await self.user_repo.update(user, {})
+        
+        return {
+            "role": user.role,
+            "original_role": user.original_role,
+            "can_switch_role": user.can_switch_role
+        }

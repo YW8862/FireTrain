@@ -71,3 +71,15 @@ class MessageResponse(BaseModel):
     """通用消息响应"""
     message: str
     code: int = 200
+
+
+class RoleSwitchRequest(BaseModel):
+    """角色切换请求"""
+    target_role: str = Field(..., description="目标角色 (user 或 admin)")
+
+
+class RoleSwitchResponse(BaseModel):
+    """角色切换响应"""
+    role: str
+    original_role: str | None = None
+    can_switch_role: bool

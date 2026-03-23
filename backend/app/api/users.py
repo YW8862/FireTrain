@@ -21,6 +21,8 @@ from app.schemas.user import (
     UserLoginRequest,
     UserRegisterRequest,
     UserUpdateRequest,
+    RoleSwitchRequest,
+    RoleSwitchResponse,
 )
 
 router = APIRouter(prefix="/api/user", tags=["用户管理"])
@@ -245,3 +247,30 @@ async def logout(
             token_blacklist.add(token, exp_timestamp)
     
     return MessageResponse(message="退出登录成功")
+
+
+@router.post("/switch-role", response_model=RoleSwitchResponse)
+async def switch_role(
+    role_data: RoleSwitchRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    切换用户角色（仅管理员可临时切换为普通用户）
+    
+    - **target_role**: 目标角色 ("user" 或 "admin")
+    """
+    user_repo = UserRepository(db)
+    user_service = UserService(user_repo)
+    
+    try:
+        result = await user_service.switch_role(
+            current_user["id"], 
+            role_data.target_role
+        )
+        return RoleSwitchResponse(**result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
