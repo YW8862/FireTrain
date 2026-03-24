@@ -1,4 +1,4 @@
-.PHONY: help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-frontend run-local docker-up docker-down docker-logs docker-restart docker-status
+.PHONY: help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-frontend run-local local-up local-down local-logs update-cert docker-up docker-down docker-logs docker-restart docker-status
 
 help:
 	@echo "Available commands:"
@@ -10,6 +10,10 @@ help:
 	@echo "  make lint        - Run backend and frontend linters"
 	@echo "  make test        - Run backend and frontend tests"
 	@echo "  make run-local   - Placeholder local run command"
+	@echo "  make local-up    - Start services in background (local dev)"
+	@echo "  make local-down  - Stop all local services"
+	@echo "  make local-logs  - View real-time logs"
+	@echo "  make update-cert - Generate/update SSL certificates"
 	@echo "  make docker-up   - Start docker compose services (后台运行)"
 	@echo "  make docker-down - Stop docker compose services"
 	@echo "  make docker-logs - View service logs"
@@ -63,7 +67,26 @@ test-frontend:
 	@cd frontend && npm run test
 
 run-local:
-	@echo "TODO: start backend/frontend in local mode."
+	@echo "本地运行命令："
+	@echo "  make local-up    - 在后台启动前后端服务"
+	@echo "  make local-down  - 停止所有服务"
+	@echo "  make local-logs  - 查看实时日志"
+
+local-up:
+	@echo "🚀 正在启动 FireTrain 项目（本地开发模式）..."
+	./scripts/start-local.sh
+
+local-down:
+	@echo "🛑 正在停止 FireTrain 项目..."
+	./scripts/stop-local.sh
+
+local-logs:
+	@echo "📋 查看实时日志..."
+	./scripts/logs.sh
+
+update-cert:
+	@echo "🔒 生成/更新 SSL 证书..."
+	./scripts/update-cert.sh
 
 docker-up:
 	docker compose up -d

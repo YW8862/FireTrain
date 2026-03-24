@@ -4,13 +4,13 @@
       <h2 class="login-title">FireTrain 消防技能训练系统</h2>
       <p class="login-subtitle">用户登录</p>
       
-      <el-form :model="form" :rules="rules" ref="loginFormRef" label-width="80px">
+      <el-form :model="form" :rules="rules" ref="loginFormRef" label-width="80px" @keyup.enter="handleLogin">
         <el-form-item label="账号" prop="username">
-          <el-input v-model="form.username" placeholder="请输入账号" clearable />
+          <el-input v-model="form.username" placeholder="请输入账号" clearable @keyup.enter="focusPassword" />
         </el-form-item>
         
         <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password @keyup.enter="handleLogin" ref="passwordInput" />
         </el-form-item>
         
         <el-form-item>
@@ -42,6 +42,7 @@ import { useUserStore } from '@/store/user'
 const router = useRouter()
 const userStore = useUserStore()
 const loginFormRef = ref(null)
+const passwordInput = ref(null)
 const loading = ref(false)
 
 const form = reactive({
@@ -62,6 +63,9 @@ const rules = {
 
 const handleLogin = async () => {
   if (!loginFormRef.value) return
+  
+  // 防止重复提交
+  if (loading.value) return
   
   await loginFormRef.value.validate(async (valid) => {
     if (valid) {
@@ -121,6 +125,13 @@ const handleLogin = async () => {
       }
     }
   })
+}
+
+// 在账号输入框按 Enter 时聚焦到密码输入框
+const focusPassword = () => {
+  if (passwordInput.value) {
+    passwordInput.value.focus()
+  }
 }
 </script>
 

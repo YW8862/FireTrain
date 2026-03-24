@@ -211,6 +211,8 @@ const cameraStarted = ref(false)
 const countdown = ref(0)
 const videoRef = ref(null)
 let stream = null
+let mediaRecorder = null  // 视频录制器
+let recordedChunks = []    // 录制的视频片段
 let countdownTimer = null
 const realtimeFeedback = ref('')
 const isPaused = ref(false) // 暂停状态
@@ -234,24 +236,25 @@ const steps = reactive([
   { name: '压把手', status: 'pending' }
 ])
 
-// 开启摄像头
+// 开启摄像头并开始录制
 const startCamera = async () => {
   try {
     const mediaStream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
         height: { ideal: 720 }
-      }
+      },
+      audio: false  // 不需要录音
     })
     
     stream = mediaStream
     if (videoRef.value) {
       videoRef.value.srcObject = mediaStream
       cameraStarted.value = true
-      ElMessage.success('摄像头已开启')
+      ElMessage.success('摄像头已开启，开始录制')
       
-      // TODO: 这里可以添加 AI 分析逻辑
-      // 实时分析视频帧，更新步骤状态
+      // 启动视频录制
+      startRecording(mediaStream)
     }
   } catch (error) {
     console.error('无法访问摄像头:', error)
@@ -259,8 +262,72 @@ const startCamera = async () => {
   }
 }
 
-// 停止摄像头
+// 开始录制视频
+const startRecording = (mediaStream) => {
+  try {
+    // 初始化录制器
+    recordedChunks = []
+    mediaRecorder = new MediaRecorder(mediaStream, {
+      mimeType: 'video/webm;codecs=vp9'
+    })
+    
+    // 监听数据可用事件
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data)
+        console.log(`录制中... 已录制 ${recordedChunks.length} 个片段`)
+      }
+    }
+    
+    // 监听录制停止事件
+    mediaRecorder.onstop = () => {
+      console.log('录制停止，总片段数:', recordedChunks.length)
+    }
+    
+    // 开始录制
+    mediaRecorder.start(1000)  // 每秒收集一次数据
+    console.log('视频录制已开始')
+  } catch (error) {
+    console.error('录制失败:', error)
+    ElMessage.error('视频录制失败：' + error.message)
+  }
+}
+
+// 停止录制并获取视频 Blob
+const stopRecording = () => {
+  return new Promise((resolve, reject) => {
+    if (!mediaRecorder) {
+      resolve(null)
+      return
+    }
+    
+    mediaRecorder.onstop = () => {
+      console.log('录制已停止，准备生成 Blob')
+      // 生成 Blob 对象
+      const blob = new Blob(recordedChunks, { type: 'video/webm' })
+      console.log('生成的视频 Blob 大小:', blob.size, 'bytes')
+      resolve(blob)
+    }
+    
+    mediaRecorder.onerror = (event) => {
+      console.error('录制过程中发生错误:', event.error)
+      reject(event.error)
+    }
+    
+    // 停止录制
+    mediaRecorder.stop()
+    console.log('正在停止录制...')
+  })
+}
+
+// 停止摄像头和录制
 const stopCamera = () => {
+  // 停止录制
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  
+  // 停止摄像头
   if (stream) {
     stream.getTracks().forEach(track => track.stop())
     stream = null
@@ -311,13 +378,41 @@ const handleCompleteTraining = async () => {
   }
   
   try {
-    await ElMessageBox.confirm('确定要完成训练吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
+    await ElMessageBox.confirm(
+      '确定要完成训练吗？\n\n' +
+      '系统将上传录制的视频并进行 AI 评分。',
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
 
     completing.value = true
+    
+    // 1. 停止录制
+    ElMessage.info('正在保存视频...')
+    const videoBlob = await stopRecording()
+    
+    // 2. 如果有视频，先上传视频
+    if (videoBlob && videoBlob.size > 0) {
+      ElMessage.info('正在上传视频...')
+      try {
+        const { uploadVideoFile } = await import('@/api/training')
+        await uploadVideoFile(currentTraining.value.training_id, videoBlob)
+        console.log('视频上传成功')
+      } catch (uploadError) {
+        console.error('视频上传失败:', uploadError)
+        // 上传失败也继续，使用模拟评分
+        ElMessage.warning('视频上传失败，将使用模拟评分')
+      }
+    } else {
+      console.warn('没有录制到视频，将使用模拟评分')
+    }
+    
+    // 3. 完成训练
+    ElMessage.info('正在计算评分...')
     const res = await completeTraining(currentTraining.value.training_id)
     
     ElMessage.success('训练已完成')

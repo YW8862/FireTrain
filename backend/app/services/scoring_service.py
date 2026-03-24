@@ -243,7 +243,7 @@ class ScoringService:
             
             step_scores[f"step{i+1}"] = {
                 "step_name": step_name,
-                "score": base_score,
+                "score": float(base_score),  # 转换为 float
                 "is_correct": is_correct,
                 "feedback": step_feedback,
                 "weight": float(weight)

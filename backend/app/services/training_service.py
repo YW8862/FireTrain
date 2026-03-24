@@ -202,17 +202,20 @@ class TrainingService:
         if training.status not in ["created", "processing"]:
             raise ValueError(f"当前状态不能完成训练：{training.status}")
         
-        # 检查是否有视频路径
-        if not training.video_path:
-            raise ValueError("视频路径为空，无法进行分析")
+        # 检查是否有视频路径（如果没有，使用模拟评分）
+        has_video = bool(training.video_path)
+        if not has_video and use_ai_scoring:
+            print(f"⚠️  训练记录 {training_id} 没有视频路径，将使用模拟评分")
+            use_ai_scoring = False  # 自动降级到模拟评分
         
         scoring_result = None
         
         if use_ai_scoring:
             try:
                 # 使用 AI 推理服务分析视频
+                # 注意：使用 ONNX 模型而不是 PT 模型
                 inference_service = TrainingInferenceService(
-                    yolo_model_path="yolov8n.pt",
+                    yolo_model_path="yolov8.onnx",  # 使用 ONNX 模型
                     yolo_conf_threshold=0.5,
                     use_pose_analysis=True
                 )
@@ -247,11 +250,23 @@ class TrainingService:
                 duration_seconds=training.duration_seconds
             )
         
+        # 确保 step_scores 可以 JSON 序列化（转换 Decimal 为 float）
+        def convert_decimal_to_float(obj):
+            """递归转换对象中的 Decimal 为 float"""
+            if isinstance(obj, Decimal):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_decimal_to_float(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimal_to_float(item) for item in obj]
+            else:
+                return obj
+        
         # 保存评分结果
         updated_training = await self.training_repo.complete_training(
             training_id=training_id,
             total_score=scoring_result["total_score"],
-            step_scores=scoring_result["step_scores"],
+            step_scores=convert_decimal_to_float(scoring_result["step_scores"]),
             feedback=scoring_result["feedback"]
         )
         

@@ -12,7 +12,24 @@ export function startTraining(data) {
 }
 
 /**
- * 上传训练视频
+ * 上传训练视频（文件方式）
+ */
+export function uploadVideoFile(trainingId, videoBlob) {
+  const formData = new FormData()
+  formData.append('file', videoBlob, `training_${trainingId}_${Date.now()}.webm`)
+  
+  return request({
+    url: `/training/upload-file/${trainingId}`,
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+/**
+ * 上传训练视频（路径方式 - 保留向后兼容）
  */
 export function uploadVideo(trainingId, videoPath) {
   return request({

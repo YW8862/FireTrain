@@ -4,21 +4,21 @@
       <h2 class="register-title">FireTrain 消防技能训练系统</h2>
       <p class="register-subtitle">用户注册</p>
       
-      <el-form :model="form" :rules="rules" ref="registerFormRef" label-width="80px">
+      <el-form :model="form" :rules="rules" ref="registerFormRef" label-width="80px" @keyup.enter="handleRegister">
         <el-form-item label="账号" prop="username">
-          <el-input v-model="form.username" placeholder="请输入账号" clearable />
+          <el-input v-model="form.username" placeholder="请输入账号" clearable @keyup.enter="focusEmail" />
         </el-form-item>
         
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="form.email" placeholder="请输入邮箱" clearable />
+          <el-input v-model="form.email" placeholder="请输入邮箱" clearable @keyup.enter="focusPassword" />
         </el-form-item>
         
         <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password @keyup.enter="focusConfirmPassword" ref="passwordInput" />
         </el-form-item>
         
         <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" show-password />
+          <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" show-password @keyup.enter="handleRegister" ref="confirmPasswordInput" />
         </el-form-item>
         
         <el-form-item>
@@ -44,6 +44,8 @@ import { register } from '@/api/user'
 
 const router = useRouter()
 const registerFormRef = ref(null)
+const passwordInput = ref(null)
+const confirmPasswordInput = ref(null)
 const loading = ref(false)
 
 const form = reactive({
@@ -83,6 +85,9 @@ const rules = {
 
 const handleRegister = async () => {
   if (!registerFormRef.value) return
+  
+  // 防止重复提交
+  if (loading.value) return
   
   await registerFormRef.value.validate(async (valid) => {
     if (valid) {
@@ -125,6 +130,26 @@ const handleRegister = async () => {
       }
     }
   })
+}
+
+// 输入框之间的 Enter 键聚焦切换
+const focusEmail = () => {
+  const emailInput = registerFormRef.value?.fields?.find(f => f.prop === 'email')?.input
+  if (emailInput) {
+    emailInput.focus()
+  }
+}
+
+const focusPassword = () => {
+  if (passwordInput.value) {
+    passwordInput.value.focus()
+  }
+}
+
+const focusConfirmPassword = () => {
+  if (confirmPasswordInput.value) {
+    confirmPasswordInput.value.focus()
+  }
 }
 </script>
 

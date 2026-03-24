@@ -9,6 +9,16 @@ const request = axios.create({
   }
 })
 
+// 开发环境：处理 HTTPS 自签名证书问题
+// 注意：这仅在开发环境下使用，生产环境应该使用正式的 CA 证书
+if (import.meta.env.DEV) {
+  // 添加对自签名证书的支持（仅开发环境）
+  const originalCreate = axios.create;
+  
+  // 在全局配置中允许自签名证书（浏览器会自动处理）
+  console.log('🔧 开发模式：已启用 HTTPS 支持（可能需要手动信任证书）');
+}
+
 // 添加请求日志
 request.interceptors.request.use(
   config => {
@@ -37,14 +47,31 @@ request.interceptors.response.use(
     
     // 添加详细的错误信息到 error 对象，供上层使用
     if (error.code === 'ERR_CERT_AUTHORITY_INVALID') {
-      error.customMessage = 'SSL 证书错误：证书颁发机构不受信任'
-      error.suggestion = '请检查服务器 SSL 证书配置，或使用 HTTP 连接进行测试'
+      error.customMessage = 'SSL 证书不受信任'
+      error.suggestion = '请在浏览器中访问 https://localhost:8000 并手动信任证书，然后重试'
+      // 自动打开新窗口让用户信任证书
+      if (!window._certTrustOpened) {
+        window._certTrustOpened = true
+        const confirmTrust = confirm(
+          '检测到 SSL 证书问题。\n\n' +
+          '这是开发环境的自签名证书，需要在浏览器中手动信任。\n\n' +
+          '点击“确定”在新窗口中打开后端地址以信任证书。'
+        )
+        if (confirmTrust) {
+          window.open('https://localhost:8000', '_blank')
+        }
+        setTimeout(() => { window._certTrustOpened = false }, 5000)
+      }
     } else if (error.code === 'ECONNREFUSED') {
       error.customMessage = '连接被拒绝'
-      error.suggestion = '请检查后端服务是否启动，端口是否正确'
+      error.suggestion = '请检查后端服务是否启动（运行 ./scripts/start-local.sh）'
     } else if (error.code === 'ETIMEDOUT') {
       error.customMessage = '请求超时'
       error.suggestion = '请检查网络连接或增加超时时间'
+    } else if (error.message === 'Network Error') {
+      // 处理一般网络错误
+      error.customMessage = '网络错误'
+      error.suggestion = '请检查：\n1. 后端服务是否运行\n2. HTTPS 证书是否有效\n3. 防火墙设置'
     }
     
     if (error.response) {

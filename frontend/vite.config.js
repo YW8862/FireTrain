@@ -24,9 +24,16 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_BASE_URL ? process.env.VITE_API_BASE_URL.replace('/api', '') : 'http://localhost:8000',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        ws: true
       }
-    }
+    },
+    // 允许外部访问
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '117.72.44.96'
+    ]
   },
   
   build: {
