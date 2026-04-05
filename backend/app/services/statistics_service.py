@@ -305,3 +305,103 @@ class StatisticsService:
         await self.session.refresh(statistics)
         
         return statistics
+    
+    async def get_system_user_stats(self) -> dict:
+        """获取系统用户统计数据"""
+        from app.models.user import User
+        from datetime import timedelta
+        
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday = today - timedelta(days=1)
+        
+        # 总用户数
+        total_result = await self.session.execute(
+            select(func.count(User.id))
+        )
+        total_users = total_result.scalar()
+        
+        # 今日新增用户
+        new_today_result = await self.session.execute(
+            select(func.count(User.id)).where(User.created_at >= today)
+        )
+        new_users_today = new_today_result.scalar()
+        
+        # 活跃用户（最近7天有登录）
+        week_ago = today - timedelta(days=7)
+        active_result = await self.session.execute(
+            select(func.count(User.id)).where(User.last_login_at >= week_ago)
+        )
+        active_users = active_result.scalar()
+        
+        # 按角色统计
+        role_stats_result = await self.session.execute(
+            select(User.role, func.count(User.id))
+            .group_by(User.role)
+        )
+        role_stats = dict(role_stats_result.all())
+        
+        return {
+            "total_users": total_users,
+            "new_users_today": new_users_today,
+            "active_users": active_users,
+            "role_distribution": role_stats
+        }
+    
+    async def get_system_training_stats(self) -> dict:
+        """获取系统训练统计数据"""
+        # 总训练次数
+        total_result = await self.session.execute(
+            select(func.count(TrainingRecord.id))
+        )
+        total_trainings = total_result.scalar()
+        
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # 今日训练次数
+        today_result = await self.session.execute(
+            select(func.count(TrainingRecord.id)).where(
+                TrainingRecord.created_at >= today
+            )
+        )
+        trainings_today = today_result.scalar()
+        
+        # 平均分数
+        avg_score_result = await self.session.execute(
+            select(func.avg(TrainingRecord.total_score)).where(
+                TrainingRecord.total_score.isnot(None)
+            )
+        )
+        average_score = avg_score_result.scalar() or 0
+        
+        # 按类型统计
+        type_stats_result = await self.session.execute(
+            select(TrainingRecord.training_type, func.count(TrainingRecord.id))
+            .group_by(TrainingRecord.training_type)
+        )
+        type_stats = dict(type_stats_result.all())
+        
+        return {
+            "total_trainings": total_trainings,
+            "trainings_today": trainings_today,
+            "average_score": round(float(average_score), 2),
+            "type_distribution": type_stats
+        }
+    
+    async def get_video_detection_stats(self) -> dict:
+        """获取视频检测统计数据"""
+        from app.models.video_detection_task import VideoDetectionTask
+        
+        # 各状态的视频数量
+        status_result = await self.session.execute(
+            select(VideoDetectionTask.status, func.count(VideoDetectionTask.id))
+            .group_by(VideoDetectionTask.status)
+        )
+        status_stats = dict(status_result.all())
+        
+        return {
+            "pending": status_stats.get("pending", 0),
+            "processing": status_stats.get("processing", 0),
+            "completed": status_stats.get("completed", 0),
+            "failed": status_stats.get("failed", 0),
+            "total": sum(status_stats.values()) if status_stats else 0
+        }

@@ -143,6 +143,86 @@ async def upload_video(
         )
 
 
+@router.post("/precheck/{training_id}")
+async def precheck_training(
+    training_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id)
+):
+    """
+    预检测训练视频（快速分析）
+    
+    - **training_id**: 训练记录 ID
+    
+    快速分析视频，检查是否有有效动作
+    
+    返回：
+    {
+        "is_valid": true/false,
+        "reason": "原因说明"
+    }
+    """
+    training_repo = TrainingRepository(db)
+    training_service = TrainingService(training_repo)
+    
+    # 获取训练记录
+    training = await training_repo.get_by_id(training_id)
+    if not training:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="训练记录不存在"
+        )
+    
+    # 验证用户权限
+    if training.user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权操作此训练记录"
+        )
+    
+    # 如果没有视频，直接返回无效
+    if not training.video_path:
+        return {"is_valid": False, "reason": "未上传视频"}
+    
+    try:
+        # 快速 AI 分析（只分析前 5 秒的视频）
+        from app.ai.training_inference_service import TrainingInferenceService
+        inference_service = TrainingInferenceService(
+            yolo_model_path="yolov8.onnx",
+            yolo_conf_threshold=0.5,
+            use_pose_analysis=True
+        )
+        
+        # 使用 analyze_video 分析完整视频，但只检查基本指标
+        analysis_result = inference_service.analyze_video(
+            video_path=training.video_path,
+            training_type=training.training_type
+        )
+        
+        # 简单验证：是否检测到任何目标
+        total_detections = analysis_result.get('total_detections', 0)
+        all_detections = analysis_result.get('all_detections', [])
+        
+        # 检查是否检测到灭火器（根据 class_name 判断）
+        extinguisher_detected = any(
+            det.get('class_name') == 'fire_extinguisher' 
+            for det in all_detections
+        )
+        
+        inference_service.close()
+        
+        # 快速判断是否有效
+        is_valid = total_detections > 0 and extinguisher_detected
+        reason = "" if is_valid else "未检测到灭火器或训练动作"
+        
+        return {"is_valid": is_valid, "reason": reason}
+        
+    except Exception as e:
+        print(f"预检测失败：{e}")
+        # 预检测失败不影响提交，返回有效
+        return {"is_valid": True, "reason": ""}
+
+
 @router.post("/upload-file/{training_id}")
 async def upload_video_file(
     training_id: int,
@@ -400,5 +480,7 @@ async def get_training_detail(
         feedback=training.feedback,
         created_at=training.created_at,
         action_count=0,  # TODO: 获取动作日志数量
-        actions=None
+        actions=None,
+        suggestions=(training.step_scores or {}).get("_suggestions", []),
+        dimension_scores=(training.step_scores or {}).get("_dimension_scores"),
     )

@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import users_router, training_router, statistics_router
+from app.api import users_router, training_router, statistics_router, admin_router
 from app.middleware import setup_request_logging, setup_exception_handlers
 from app.core.security import get_current_user_id
 from app.services.cleanup_service import setup_cleanup_task
@@ -53,6 +53,7 @@ setup_cleanup_task(app)
 app.include_router(users_router)
 app.include_router(training_router)
 app.include_router(statistics_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

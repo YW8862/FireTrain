@@ -202,11 +202,10 @@ class TrainingService:
         if training.status not in ["created", "processing"]:
             raise ValueError(f"当前状态不能完成训练：{training.status}")
         
-        # 检查是否有视频路径（如果没有，使用模拟评分）
+        # 检查是否有视频路径（如果没有，抛出错误）
         has_video = bool(training.video_path)
-        if not has_video and use_ai_scoring:
-            print(f"⚠️  训练记录 {training_id} 没有视频路径，将使用模拟评分")
-            use_ai_scoring = False  # 自动降级到模拟评分
+        if not has_video:
+            raise ValueError("未完成训练！请先上传训练视频")
         
         scoring_result = None
         
@@ -226,22 +225,33 @@ class TrainingService:
                     training_type=training.training_type
                 )
                 
-                # 生成 AI 评分
-                ai_score_result = inference_service.generate_ai_scores(analysis_result)
+                # 验证检测结果是否有效
+                validation_result = self._validate_detection_result(analysis_result)
                 
-                # 转换为普通字典（处理 Decimal）
-                scoring_result = self._convert_ai_score_to_dict(ai_score_result)
+                # 如果没有检测到有效动作，返回 0 分结果（不阻止提交）
+                if not validation_result['is_valid']:
+                    print(f"⚠️ 未检测到有效动作，将返回 0 分：{validation_result['reason']}")
+                    # 生成 0 分结果
+                    scoring_result = await self._generate_zero_score_result(
+                        training_type=training.training_type,
+                        reason=validation_result['reason']
+                    )
+                else:
+                    # 检测到有效动作，优先使用 LLM 评分
+                    scoring_result = await self._score_with_llm_or_fallback(
+                        analysis_result=analysis_result,
+                        inference_service=inference_service,
+                    )
                 
                 inference_service.close()
                 
+            except ValueError as ve:
+                # 业务逻辑错误（如验证失败），直接抛出
+                raise ve
             except Exception as e:
-                # AI 分析失败，降级到模拟评分
-                print(f"AI 分析失败：{e}，使用模拟评分")
-                scoring_service = ScoringService()
-                scoring_result = await scoring_service.score_training(
-                    training_type=training.training_type,
-                    duration_seconds=training.duration_seconds
-                )
+                # AI 分析失败，抛出错误（不再降级到模拟评分）
+                print(f"AI 分析失败：{e}")
+                raise ValueError(f"AI 分析失败：{str(e)}，请稍后重试或联系管理员")
         else:
             # 使用模拟评分
             scoring_service = ScoringService()
@@ -263,10 +273,18 @@ class TrainingService:
                 return obj
         
         # 保存评分结果
+        # 将 suggestions 也存入 step_scores JSON，以便详情接口读取
+        step_scores_for_db = convert_decimal_to_float(scoring_result["step_scores"])
+        step_scores_for_db["_suggestions"] = scoring_result.get("suggestions", [])
+        step_scores_for_db["_dimension_scores"] = convert_decimal_to_float(
+            scoring_result.get("dimension_scores", {})
+        )
+        step_scores_for_db["_performance_level"] = scoring_result.get("performance_level", "")
+
         updated_training = await self.training_repo.complete_training(
             training_id=training_id,
             total_score=scoring_result["total_score"],
-            step_scores=convert_decimal_to_float(scoring_result["step_scores"]),
+            step_scores=step_scores_for_db,
             feedback=scoring_result["feedback"]
         )
         
@@ -277,6 +295,178 @@ class TrainingService:
             "feedback": updated_training.feedback,
             "scoring_result": scoring_result,
             "used_ai_scoring": use_ai_scoring
+        }
+    
+    async def _score_with_llm_or_fallback(
+        self,
+        analysis_result: Dict[str, Any],
+        inference_service,
+    ) -> Dict[str, Any]:
+        """使用 LLM 评分，失败时回退到规则引擎评分
+
+        Args:
+            analysis_result: 视频分析结果
+            inference_service: TrainingInferenceService 实例（用于回退）
+
+        Returns:
+            评分结果字典
+        """
+        from app.ai.llm_scoring_service import LLMScoringService
+
+        llm_service = LLMScoringService.from_settings()
+        if llm_service is not None:
+            try:
+                print("🤖 正在调用大模型进行评分...")
+                scoring_result = await llm_service.score_training(analysis_result)
+                print(f"✅ 大模型评分完成，总分：{scoring_result.get('total_score', 0)}")
+                return scoring_result
+            except Exception as llm_error:
+                print(f"⚠️ 大模型评分失败，回退到规则引擎：{llm_error}")
+        else:
+            print("ℹ️ 未配置 LLM_API_KEY，使用规则引擎评分")
+
+        # 回退：使用原有规则引擎评分
+        ai_score_result = inference_service.generate_ai_scores(analysis_result)
+        scoring_result = self._convert_ai_score_to_dict(ai_score_result)
+        real_suggestions = inference_service.generate_real_suggestions(
+            analysis_result=analysis_result,
+            step_scores=scoring_result["step_scores"],
+        )
+        scoring_result["suggestions"] = real_suggestions
+        return scoring_result
+
+    def _validate_detection_result(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        验证 AI 检测结果是否有效
+        
+        Args:
+            analysis_result: AI 分析结果
+            
+        Returns:
+            {
+                'is_valid': bool,  # 是否有效
+                'reason': str      # 无效时的原因
+            }
+        """
+        result = {'is_valid': True, 'reason': ''}
+        
+        # 1. 检查是否检测到任何目标
+        total_detections = analysis_result.get('total_detections', 0)
+        if total_detections == 0:
+            reason = "未检测到任何训练动作"
+            print(f"❌ 验证失败：{reason}")
+            return {'is_valid': False, 'reason': reason}
+        
+        # 2. 检查步骤序列（至少应该有 6 个步骤）
+        step_sequence = analysis_result.get('step_sequence', [])
+        if len(step_sequence) < 6:
+            reason = f"只完成 {len(step_sequence)} 个步骤，需要 6 个步骤"
+            print(f"❌ 验证失败：{reason}")
+            return {'is_valid': False, 'reason': reason}
+        
+        # 3. 检查视频时长（太短可能是作弊）
+        video_duration = analysis_result.get('video_duration', 0)
+        if video_duration < 30:  # 少于 30 秒
+            reason = f"训练时长仅 {video_duration} 秒，建议不少于 30 秒"
+            print(f"❌ 验证失败：{reason}")
+            return {'is_valid': False, 'reason': reason}
+        
+        # 4. 检查是否有灭火器检测记录
+        extinguisher_detected = analysis_result.get('extinguisher_detected', False)
+        if not extinguisher_detected:
+            reason = "未检测到灭火器"
+            print(f"❌ 验证失败：{reason}")
+            return {'is_valid': False, 'reason': reason}
+        
+        # 5. 检查是否有人体姿态分析结果
+        pose_analysis = analysis_result.get('pose_analysis', {})
+        if not pose_analysis or 'key_angles' not in pose_analysis:
+            reason = "未检测到人体姿态"
+            print(f"❌ 验证失败：{reason}")
+            return {'is_valid': False, 'reason': reason}
+        
+        print(f"✅ 验证通过：检测到 {total_detections} 个目标，{len(step_sequence)} 个步骤，时长 {video_duration} 秒")
+        return result
+    
+    async def _generate_zero_score_result(
+        self,
+        training_type: str,
+        reason: str
+    ) -> Dict[str, Any]:
+        """
+        生成 0 分评分结果（当未检测到有效动作时）
+        
+        Args:
+            training_type: 训练类型
+            reason: 无效原因
+            
+        Returns:
+            0 分评分结果字典
+        """
+        # 定义标准步骤
+        standard_steps = [
+            "准备阶段",
+            "提灭火器",
+            "拔保险销",
+            "握喷管",
+            "瞄准火源",
+            "压把手"
+        ]
+        
+        # 所有步骤都是 0 分
+        step_scores = {}
+        for i, step_name in enumerate(standard_steps):
+            step_scores[f"step{i+1}"] = {
+                "step_name": step_name,
+                "score": 0.0,
+                "is_correct": False,
+                "feedback": f"未检测到{step_name}动作",
+                "weight": 0.167  # 平均权重
+            }
+        
+        # 总体反馈
+        feedback = f"未检测到有效训练动作。{reason}\n\n建议：\n" + \
+                   "1. 确保在摄像头范围内操作\n" + \
+                   "2. 完成所有 6 个标准步骤\n" + \
+                   "3. 每个动作做到位\n" + \
+                   "4. 训练时长不少于 30 秒"
+        
+        # 根据失败原因生成针对性建议
+        suggestions = []
+        
+        # 基于验证失败的原因给出具体建议
+        if "未检测到任何训练动作" in reason:
+            suggestions.append("视频中未检测到任何动作，请确保在摄像头范围内进行操作")
+            suggestions.append("检查摄像头是否正常工作，确保全身出现在画面中")
+        elif "未检测到灭火器" in reason:
+            suggestions.append("请使用真实灭火器进行训练")
+            suggestions.append("确保灭火器在摄像头视野内清晰可见")
+        elif "未检测到人体姿态" in reason:
+            suggestions.append("未检测到人体姿态，请确保全身在摄像头范围内")
+            suggestions.append("保持身体正面或侧面朝向摄像头，不要背对摄像头")
+        elif "步骤" in reason:
+            suggestions.append(f"未完成所有步骤，{reason}")
+            suggestions.append("按照标准流程完成全部 6 个步骤：准备、提灭火器、拔保险销、握喷管、瞄准、压把手")
+        elif "时长" in reason:
+            suggestions.append(f"训练时间不足，{reason}")
+            suggestions.append("建议训练时长不少于 30 秒，确保每个步骤做到位")
+        else:
+            # 默认建议
+            suggestions.append("重新训练，确保完成所有步骤")
+            suggestions.append("观看标准动作演示视频")
+        
+        # 通用建议（所有情况都加上）
+        suggestions.append("可以对照镜子练习，观察自己的动作是否规范")
+        suggestions.append("请教练或同事指导动作要领")
+        
+        return {
+            "total_score": 0.0,
+            "step_scores": step_scores,
+            "feedback": feedback,
+            "suggestions": suggestions,
+            "action_logs": [],
+            "duration_seconds": None,
+            "time_bonus": None
         }
     
     def _convert_ai_score_to_dict(

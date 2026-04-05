@@ -197,7 +197,7 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoCamera, Document, Timer, Clock, VideoPlay, VideoPause } from '@element-plus/icons-vue'
-import { startTraining, completeTraining } from '@/api/training'
+import { startTraining, completeTraining, preCheckTraining, uploadVideoFile } from '@/api/training'
 import { useUserStore } from '@/store/user'
 import NavBar from '@/components/NavBar.vue'
 
@@ -380,7 +380,11 @@ const handleCompleteTraining = async () => {
   try {
     await ElMessageBox.confirm(
       '确定要完成训练吗？\n\n' +
-      '系统将上传录制的视频并进行 AI 评分。',
+      '系统将进行以下检查：\n' +
+      '1. 验证视频已上传\n' +
+      '2. AI 分析训练动作\n' +
+      '3. 检测 6 个标准步骤\n\n' +
+      '⚠️ 如果未检测到有效动作，将无法完成训练',
       '提示',
       {
         confirmButtonText: '确定',
@@ -411,7 +415,46 @@ const handleCompleteTraining = async () => {
       console.warn('没有录制到视频，将使用模拟评分')
     }
     
-    // 3. 完成训练
+    // 3. AI 预检测（快速分析）
+    let shouldContinue = true
+    try {
+      ElMessage.info('AI 正在快速检测...')
+      // 调用预检测 API（稍后实现）
+      const preCheckResult = await preCheckTraining(currentTraining.value.training_id)
+      
+      // 如果未检测到有效动作，显示警告对话框
+      if (!preCheckResult.is_valid) {
+        try {
+          await ElMessageBox.confirm(
+            '⚠️ 未检测到有效训练动作\n\n' +
+            `原因：${preCheckResult.reason}\n\n` +
+            '是否继续提交？\n' +
+            '继续提交将获得 0 分，但会记录到训练历史中。',
+            '警告',
+            {
+              confirmButtonText: '继续提交',
+              cancelButtonText: '取消',
+              type: 'warning'
+            }
+          )
+        } catch {
+          // 用户选择取消
+          shouldContinue = false
+          ElMessage.info('已取消提交')
+        }
+      }
+    } catch (preCheckError) {
+      console.warn('预检测失败，继续提交流程:', preCheckError)
+      // 预检测失败不影响提交
+    }
+    
+    // 如果用户选择取消，不继续提交
+    if (!shouldContinue) {
+      completing.value = false
+      return
+    }
+    
+    // 4. 完成训练（显示加载动画）
     ElMessage.info('正在计算评分...')
     const res = await completeTraining(currentTraining.value.training_id)
     
@@ -427,8 +470,26 @@ const handleCompleteTraining = async () => {
     if (error !== 'cancel') {
       console.error('完成训练失败:', error)
       // 如果是状态错误，给出更友好的提示
-      if (error.response?.data?.detail?.includes('当前状态')) {
-        ElMessage.error('训练状态异常，请刷新页面后重试')
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail
+        
+        // 根据错误类型给出不同提示
+        if (detail.includes('未检测到')) {
+          ElMessage.error(
+            '❌ 未检测到有效训练动作\n\n' +
+            '请确保：\n' +
+            '1. 在摄像头范围内操作\n' +
+            '2. 完成 6 个标准步骤\n' +
+            '3. 每个动作做到位\n' +
+            '4. 训练时长不少于 30 秒'
+          )
+        } else if (detail.includes('视频')) {
+          ElMessage.error('❌ 请先上传训练视频')
+        } else if (detail.includes('AI 分析')) {
+          ElMessage.error('❌ AI 分析失败，请稍后重试或联系管理员')
+        } else {
+          ElMessage.error('❌ ' + detail)
+        }
       } else {
         ElMessage.error(error.response?.data?.detail || '完成训练失败，请稍后重试')
       }

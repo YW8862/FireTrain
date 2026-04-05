@@ -144,6 +144,123 @@ class TrainingInferenceService:
         
         return analysis_summary
     
+    def generate_real_suggestions(
+        self,
+        analysis_result: Dict[str, Any],
+        step_scores: Dict[str, Any]
+    ) -> List[str]:
+        """
+        基于真实 AI 分析数据生成改进建议
+        
+        Args:
+            analysis_result: AI 分析结果（包含检测、姿态等详细数据）
+            step_scores: 步骤分数
+            
+        Returns:
+            真实的改进建议列表
+        """
+        suggestions = []
+        
+        # 1. 基于灭火器检测结果的建议
+        extinguisher_detected = analysis_result.get('extinguisher_detected', False)
+        if not extinguisher_detected:
+            suggestions.append("视频中未检测到灭火器，请确保使用真实灭火器进行训练")
+        else:
+            all_detections = analysis_result.get('all_detections', [])
+            extinguisher_uses = [d for d in all_detections if d.get('class') == 'fire_extinguisher']
+            
+            if len(extinguisher_uses) < 5:
+                suggestions.append("灭火器使用次数较少，建议增加实际操作练习")
+        
+        # 2. 基于姿态分析的建议
+        all_pose_results = analysis_result.get('all_pose_results', [])
+        if all_pose_results:
+            poor_posture_count = 0
+            specific_issues = set()
+            
+            for pose_data in all_pose_results:
+                angles = pose_data.get('angles', {})
+                
+                right_arm = angles.get('right_arm', 180)
+                left_arm = angles.get('left_arm', 180)
+                
+                if right_arm < 60 or right_arm > 170:
+                    poor_posture_count += 1
+                    specific_issues.add("手臂角度不规范")
+                
+                torso_angle = angles.get('torso', 90)
+                if torso_angle < 70 or torso_angle > 110:
+                    specific_issues.add("身体姿势不稳定")
+            
+            if poor_posture_count > len(all_pose_results) * 0.3:
+                if "手臂角度不规范" in specific_issues:
+                    suggestions.append("注意保持手臂正确角度：提灭火器时手臂自然弯曲约 90 度")
+                if "身体姿势不稳定" in specific_issues:
+                    suggestions.append("保持身体稳定，双脚分开与肩同宽，重心下沉")
+        else:
+            suggestions.append("未检测到人体姿态，请确保全身在摄像头范围内")
+        
+        # 3. 基于步骤完成情况的建议
+        step_sequence = analysis_result.get('step_sequence', [])
+        if len(step_sequence) < 6:
+            completed_steps = {step['step_name'] for step in step_sequence}
+            all_steps = set(self.STANDARD_STEPS)
+            missing_steps = all_steps - completed_steps
+            
+            if missing_steps:
+                suggestions.append(f"未完成所有步骤，缺少：{','.join(missing_steps)}")
+        else:
+            weak_steps = []
+            for step_key, step_data in step_scores.items():
+                if isinstance(step_data, dict) and step_data.get('score', 100) < 75:
+                    weak_steps.append(step_data.get('step_name', step_key))
+            
+            if weak_steps:
+                suggestions.append(f"重点改进步骤：{','.join(weak_steps[:3])}，动作需要更规范")
+        
+        # 4. 基于时长的建议
+        video_duration = analysis_result.get('video_duration', 0)
+        if video_duration < 60:
+            suggestions.append("操作速度较快，注意不要慌乱，确保每个步骤做到位")
+        elif video_duration > 150:
+            suggestions.append("操作时间较长，建议加强熟练度，提高反应速度")
+        elif 90 <= video_duration <= 120:
+            suggestions.append("操作时长适中，节奏控制良好")
+        
+        # 5. 基于检测连续性的建议
+        frame_results = analysis_result.get('frame_results', [])
+        if frame_results:
+            detection_gaps = 0
+            prev_has_detection = True
+            
+            for frame_data in frame_results:
+                has_detection = len(frame_data.get('detections', [])) > 0
+                if not has_detection and prev_has_detection:
+                    detection_gaps += 1
+                prev_has_detection = has_detection
+            
+            if detection_gaps > 3:
+                suggestions.append("操作过程中有中断，建议保持动作连贯性")
+        
+        # 6. 如果没有具体问题，给出鼓励性建议
+        if not suggestions:
+            total_score = sum(
+                step_data.get('score', 0) 
+                for step_data in step_scores.values() 
+                if isinstance(step_data, dict)
+            ) / max(len(step_scores), 1)
+            
+            if total_score >= 90:
+                suggestions.append("表现优秀！可以担任小教练指导他人")
+                suggestions.append("尝试挑战更快的完成速度（60-90 秒）")
+            elif total_score >= 80:
+                suggestions.append("整体表现良好，继续保持规范操作")
+                suggestions.append("可以适当提高操作流畅度")
+            else:
+                suggestions.append("基本掌握操作流程，继续练习提高熟练度")
+        
+        return suggestions
+    
     def _recognize_action_sequence(
         self,
         frame_results: List[Dict[str, Any]]

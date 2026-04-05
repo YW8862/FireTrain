@@ -117,3 +117,96 @@ class TrainingRepository:
         records = result.scalars().all()
         
         return records, total
+    
+    async def delete(self, training: TrainingRecord) -> None:
+        """删除训练记录"""
+        await self.session.delete(training)
+        await self.session.commit()
+    
+    async def query_with_filters(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        user_id: Optional[int] = None,
+        training_type: Optional[str] = None,
+        status: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> tuple[list[dict], int]:
+        """
+        带过滤条件的训练记录查询
+        
+        Returns:
+            (训练记录列表, 总数)
+        """
+        from sqlalchemy import select, func
+        from datetime import datetime
+        
+        query = select(TrainingRecord)
+        count_query = select(func.count(TrainingRecord.id))
+        
+        # 用户ID过滤
+        if user_id:
+            query = query.where(TrainingRecord.user_id == user_id)
+            count_query = count_query.where(TrainingRecord.user_id == user_id)
+        
+        # 训练类型过滤
+        if training_type:
+            query = query.where(TrainingRecord.training_type == training_type)
+            count_query = count_query.where(TrainingRecord.training_type == training_type)
+        
+        # 状态过滤
+        if status:
+            query = query.where(TrainingRecord.status == status)
+            count_query = count_query.where(TrainingRecord.status == status)
+        
+        # 日期范围过滤
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date)
+            query = query.where(TrainingRecord.created_at >= start_dt)
+            count_query = count_query.where(TrainingRecord.created_at >= start_dt)
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date)
+            query = query.where(TrainingRecord.created_at <= end_dt)
+            count_query = count_query.where(TrainingRecord.created_at <= end_dt)
+        
+        # 查询总数
+        total_result = await self.session.execute(count_query)
+        total = total_result.scalar()
+        
+        # 分页查询
+        query = (
+            query.order_by(TrainingRecord.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        
+        result = await self.session.execute(query)
+        trainings = result.scalars().all()
+        
+        # 转换为字典（不访问关系属性，避免异步问题）
+        training_list = []
+        for training in trainings:
+            # 单独查询用户名
+            from sqlalchemy import select
+            from app.models.user import User
+            user_result = await self.session.execute(
+                select(User.username).where(User.id == training.user_id)
+            )
+            username = user_result.scalar_one_or_none()
+            
+            training_list.append({
+                "id": training.id,
+                "user_id": training.user_id,
+                "username": username,
+                "training_type": training.training_type,
+                "score": float(training.total_score) if training.total_score else None,
+                "status": training.status,
+                "duration": float(training.duration_seconds) if training.duration_seconds else None,
+                "feedback": training.feedback,
+                "created_at": training.created_at,
+                "completed_at": training.completed_at
+            })
+        
+        return training_list, total

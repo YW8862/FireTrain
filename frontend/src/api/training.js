@@ -12,6 +12,16 @@ export function startTraining(data) {
 }
 
 /**
+ * 预检测训练视频（快速分析）
+ */
+export function preCheckTraining(trainingId) {
+  return request({
+    url: `/training/precheck/${trainingId}`,
+    method: 'post'
+  })
+}
+
+/**
  * 上传训练视频（文件方式）
  */
 export function uploadVideoFile(trainingId, videoBlob) {
@@ -48,7 +58,8 @@ export function uploadVideo(trainingId, videoPath) {
 export function completeTraining(trainingId) {
   return request({
     url: `/training/complete/${trainingId}`,
-    method: 'post'
+    method: 'post',
+    timeout: 120000  // 增加到 120 秒，因为 AI 分析需要较长时间
   })
 }
 

@@ -51,9 +51,11 @@ class TrainingRecordResponse(BaseModel):
 
 
 class TrainingDetailResponse(TrainingRecordResponse):
-    """训练详情响应（包含动作日志）"""
+    """训练详情响应（包含动作日志和 AI 建议）"""
     action_count: int = 0
     actions: Optional[List[Dict[str, Any]]] = None
+    suggestions: List[str] = Field(default_factory=list, description="AI 改进建议")
+    dimension_scores: Optional[Dict[str, Any]] = Field(None, description="三维度评分")
 
 
 class TrainingHistoryResponse(BaseModel):

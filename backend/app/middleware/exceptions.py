@@ -27,7 +27,6 @@ async def validation_exception_handler(
         content={
             "error": "参数验证失败",
             "detail": exc.errors(),
-            "body": exc.body
         },
     )
 

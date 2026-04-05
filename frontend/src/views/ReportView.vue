@@ -43,15 +43,33 @@
               <div class="dimension-scores">
                 <div class="dimension-item">
                   <span class="dimension-label">动作完整性</span>
-                  <el-progress :percentage="reportData.total_score" :color="getDimensionColor(reportData.total_score)" />
+                  <el-progress
+                    :percentage="reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score"
+                    :color="getDimensionColor(reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score)"
+                  />
+                  <p v-if="reportData.dimension_scores?.action_completeness?.comment" class="dimension-comment">
+                    {{ reportData.dimension_scores.action_completeness.comment }}
+                  </p>
                 </div>
                 <div class="dimension-item">
                   <span class="dimension-label">姿态规范性</span>
-                  <el-progress :percentage="reportData.total_score * 0.95" :color="getDimensionColor(reportData.total_score * 0.95)" />
+                  <el-progress
+                    :percentage="reportData.dimension_scores?.pose_standardization?.score ?? Math.round(reportData.total_score * 0.95)"
+                    :color="getDimensionColor(reportData.dimension_scores?.pose_standardization?.score ?? reportData.total_score * 0.95)"
+                  />
+                  <p v-if="reportData.dimension_scores?.pose_standardization?.comment" class="dimension-comment">
+                    {{ reportData.dimension_scores.pose_standardization.comment }}
+                  </p>
                 </div>
                 <div class="dimension-item">
                   <span class="dimension-label">操作时效性</span>
-                  <el-progress :percentage="reportData.total_score * 0.9" :color="getDimensionColor(reportData.total_score * 0.9)" />
+                  <el-progress
+                    :percentage="reportData.dimension_scores?.timeliness?.score ?? Math.round(reportData.total_score * 0.9)"
+                    :color="getDimensionColor(reportData.dimension_scores?.timeliness?.score ?? reportData.total_score * 0.9)"
+                  />
+                  <p v-if="reportData.dimension_scores?.timeliness?.comment" class="dimension-comment">
+                    {{ reportData.dimension_scores.timeliness.comment }}
+                  </p>
                 </div>
               </div>
             </el-col>
@@ -108,7 +126,8 @@ const reportData = reactive({
   feedback: '',
   step_scores: [],
   problems: [],
-  suggestions: []
+  suggestions: [],
+  dimension_scores: null
 })
 
 // 建议列表（从反馈中生成）
@@ -174,9 +193,15 @@ const loadReportData = async () => {
     // 解析数据 - 处理字符串到数字的转换
     reportData.total_score = parseFloat(res.total_score) || 0
     reportData.feedback = res.feedback || ''
-    
-    // 根据总分确定等级
-    if (res.total_score >= 90) {
+
+    // 维度分数（LLM 评分时返回）
+    reportData.dimension_scores = res.dimension_scores || null
+
+    // 性能等级：优先用 step_scores 中存储的等级，否则根据总分判断
+    const storedLevel = (res.step_scores || {})._performance_level
+    if (storedLevel) {
+      reportData.performance_level = storedLevel
+    } else if (res.total_score >= 90) {
       reportData.performance_level = 'excellent'
     } else if (res.total_score >= 80) {
       reportData.performance_level = 'good'
@@ -186,26 +211,22 @@ const loadReportData = async () => {
       reportData.performance_level = 'fail'
     }
     
-    // 解析步骤分数 - 将对象转换为数组
+    // 解析步骤分数 - 将对象转换为数组，过滤掉 _meta 键
     if (res.step_scores) {
       // API 返回的是对象 {step1: {...}, step2: {...}}，需要转换为数组
-      reportData.step_scores = Object.entries(res.step_scores).map(([key, value]) => ({
-        step_name: value.step_name || `步骤${key.replace('step', '')}`,
-        score: parseFloat(value.score) || 0,
-        feedback: value.feedback || ''
-      }))
+      // 过滤掉 _ 开头的元数据字段（如 _suggestions, _dimension_scores）
+      reportData.step_scores = Object.entries(res.step_scores)
+        .filter(([key]) => !key.startsWith('_'))
+        .map(([key, value]) => ({
+          step_name: value.step_name || `步骤${key.replace('step', '')}`,
+          score: parseFloat(value.score) || 0,
+          feedback: value.feedback || ''
+        }))
     }
-    
-    // 从反馈中生成问题列表和建议（简化处理）
-    if (res.feedback) {
-      // TODO: 使用真实的 AI 反馈生成器结果
-      reportData.problems = ['部分动作不够规范，需要加强练习']
-      reportData.suggestions = [
-        '步骤 2 拔销动作不够流畅，建议练习手腕发力',
-        '步骤 4 手臂角度偏差 5 度，请保持手臂伸直',
-        '整体操作时间优秀，继续保持'
-      ]
-      suggestions.value = reportData.suggestions
+
+    // AI 改进建议：优先使用详情接口返回的 suggestions 字段
+    if (res.suggestions && res.suggestions.length > 0) {
+      suggestions.value = res.suggestions
     } else {
       suggestions.value = []
     }
@@ -449,6 +470,12 @@ onUnmounted(() => {
   margin-bottom: 8px;
   font-weight: 500;
   color: #303133;
+}
+
+.dimension-comment {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #909399;
 }
 
 .chart-container {

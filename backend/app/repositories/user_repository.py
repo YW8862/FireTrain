@@ -56,3 +56,79 @@ class UserRepository:
         """更新最后登录时间"""
         user.last_login_at = datetime.utcnow()
         await self.session.flush()
+    
+    async def delete(self, user: User) -> None:
+        """删除用户"""
+        await self.session.delete(user)
+        await self.session.commit()
+    
+    async def query_with_filters(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        role_filter: Optional[str] = None,
+        keyword: Optional[str] = None
+    ) -> tuple[list[dict], int]:
+        """
+        带过滤条件的用户查询
+        
+        Returns:
+            (用户列表, 总数)
+        """
+        from sqlalchemy import select, func, or_
+        
+        # 构建查询
+        query = select(User)
+        count_query = select(func.count(User.id))
+        
+        # 角色过滤
+        if role_filter:
+            query = query.where(User.role == role_filter)
+            count_query = count_query.where(User.role == role_filter)
+        
+        # 关键词搜索（用户名或邮箱）
+        if keyword:
+            search_pattern = f"%{keyword}%"
+            query = query.where(
+                or_(
+                    User.username.like(search_pattern),
+                    User.email.like(search_pattern)
+                )
+            )
+            count_query = count_query.where(
+                or_(
+                    User.username.like(search_pattern),
+                    User.email.like(search_pattern)
+                )
+            )
+        
+        # 查询总数
+        total_result = await self.session.execute(count_query)
+        total = total_result.scalar()
+        
+        # 分页查询
+        query = (
+            query.order_by(User.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        
+        result = await self.session.execute(query)
+        users = result.scalars().all()
+        
+        # 转换为字典（不包含密码）
+        user_list = []
+        for user in users:
+            user_list.append({
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "phone": user.phone,
+                "role": user.role,
+                "is_active": user.is_active,
+                "last_login_at": user.last_login_at,
+                "created_at": user.created_at,
+                "can_switch_role": user.can_switch_role
+            })
+        
+        return user_list, total
