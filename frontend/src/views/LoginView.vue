@@ -39,6 +39,9 @@ import { ElMessage } from 'element-plus'
 import { login } from '@/api/user'
 import { useUserStore } from '@/store/user'
 
+// 🔥 调试标记：确认代码已加载
+console.log('🔥 LoginView.vue 已加载！版本: 2026-04-05-16-50')
+
 const router = useRouter()
 const userStore = useUserStore()
 const loginFormRef = ref(null)
@@ -75,7 +78,25 @@ const handleLogin = async () => {
         userStore.setToken(res.token)
         userStore.setUserInfo(res.user_info)
         ElMessage.success('登录成功')
-        router.push('/')
+        
+        // 调试日志
+        console.log('=== 登录响应 ===', res)
+        console.log('用户信息:', res.user_info)
+        console.log('用户角色:', res.user_info?.role)
+        
+        // 根据角色跳转到不同页面
+        const role = res.user_info?.role || 'user'
+        console.log('判断后的角色:', role)
+        
+        if (role === 'admin' || role === 'root') {
+          // 管理员和 Root 用户跳转到管理后台
+          console.log('跳转到管理后台: /admin/dashboard')
+          router.push('/admin/dashboard')
+        } else {
+          // 普通用户跳转到首页
+          console.log('跳转到首页: /')
+          router.push('/')
+        }
       } catch (error) {
         console.error('登录失败:', error)
         

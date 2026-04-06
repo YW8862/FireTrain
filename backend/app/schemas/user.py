@@ -83,3 +83,4 @@ class RoleSwitchResponse(BaseModel):
     role: str
     original_role: str | None = None
     can_switch_role: bool
+    token: str | None = None  # 新的 Token

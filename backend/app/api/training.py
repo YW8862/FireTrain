@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.repositories.training_repository import TrainingRepository
 from app.services.training_service import TrainingService
+from app.core.security import get_current_user_id
 from app.schemas.training import (
     TrainingDetailResponse,
     TrainingHistoryResponse,
@@ -57,17 +58,6 @@ class TrainingCompleteResponse(BaseModel):
     feedback: str = Field(..., description="反馈信息")
     used_ai_scoring: bool = Field(..., description="是否使用 AI 评分")
     scoring_details: ScoringDetails = Field(..., description="评分详情")
-
-
-# OAuth2 scheme for token authentication（简化版，实际应该解析 JWT）
-# TODO: 实现真实的 JWT 验证
-async def get_current_user_id(db: Annotated[AsyncSession, Depends(get_db)]) -> int:
-    """
-    获取当前用户 ID（临时实现）
-    TODO: 从 JWT token 中解析真实用户 ID
-    """
-    # 临时返回一个测试用户 ID
-    return 1
 
 
 # ============ 训练任务接口 ============
@@ -449,7 +439,15 @@ async def get_training_detail(
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id)
 ):
-    """获取训练详情"""
+    """获取训练详情
+    
+    - 普通用户只能查看自己的训练记录
+    - 管理员可以查看所有训练记录
+    """
+    logger.error(f"⚠️⚠️⚠️ get_training_detail 被调用！training_id={training_id}, current_user_id={current_user_id}")
+    
+    from app.repositories.user_repository import UserRepository
+    
     training_repo = TrainingRepository(db)
     training = await training_repo.get_by_id(training_id)
     
@@ -460,7 +458,20 @@ async def get_training_detail(
         )
     
     # 验证用户权限
-    if training.user_id != current_user_id:
+    logger.info(f"🔍 开始权限检查: training_id={training_id}, user_id={training.user_id}, current_user_id={current_user_id}")
+    
+    # 如果是管理员或 Root，可以查看所有记录
+    user_repo = UserRepository(db)
+    current_user = await user_repo.get_by_id(current_user_id)
+    
+    logger.info(f"👤 当前用户: {current_user.username if current_user else 'None'}, 角色: {current_user.role if current_user else 'None'}")
+    
+    if current_user and current_user.role in ["admin", "root"]:
+        # 管理员可以查看所有记录
+        logger.info(f"✅ 管理员 {current_user.username} 查看训练记录 {training_id}")
+    elif training.user_id != current_user_id:
+        # 普通用户只能查看自己的记录
+        logger.warning(f"❌ 权限不足: training.user_id={training.user_id} != current_user_id={current_user_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权查看此训练记录"

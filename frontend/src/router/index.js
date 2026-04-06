@@ -48,6 +48,60 @@ const routes = [
     name: 'Stats',
     component: () => import('@/views/StatsView.vue'),
     meta: { title: '数据统计', requiresAuth: true }
+  },
+  // 后台管理路由
+  {
+    path: '/admin',
+    component: () => import('@/views/admin/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresRole: ['admin', 'root'] },
+    children: [
+      {
+        path: '',
+        redirect: '/admin/dashboard'
+      },
+      {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/views/admin/Dashboard.vue'),
+        meta: { title: '仪表盘' }
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/views/admin/UserManagement.vue'),
+        meta: { title: '用户管理' }
+      },
+      {
+        path: 'trainings',
+        name: 'AdminTrainings',
+        component: () => import('@/views/admin/TrainingManagement.vue'),
+        meta: { title: '训练数据管理' }
+      },
+      {
+        path: 'videos',
+        name: 'AdminVideos',
+        component: () => import('@/views/admin/VideoDetection.vue'),
+        meta: { title: '视频检测' }
+      },
+      {
+        path: 'video-upload',
+        name: 'AdminVideoUpload',
+        component: () => import('@/views/admin/AdminVideoUpload.vue'),
+        meta: { title: '管理员视频检测' }
+      },
+      {
+        path: 'logs',
+        name: 'AdminLogs',
+        component: () => import('@/views/admin/OperationLogs.vue'),
+        meta: { title: '操作日志' }
+      },
+      {
+        path: 'report/:id',
+        name: 'AdminReport',
+        component: () => import('@/views/admin/AdminReportView.vue'),
+        meta: { title: '训练报告' }
+      }
+    ]
   }
 ]
 
@@ -61,10 +115,38 @@ router.beforeEach((to, _from) => {
   // 设置页面标题
   document.title = to.meta.title ? `${to.meta.title} - FireTrain` : 'FireTrain'
   
+  console.log('🔍 路由守卫:', to.path)
+  
   // 检查是否需要登录
   const token = localStorage.getItem('token')
+  console.log('🔑 Token 存在:', !!token)
+  
   if (to.meta.requiresAuth && !token) {
+    console.log('❌ 未登录，重定向到 /login')
     return '/login'
+  }
+  
+  // 检查角色权限
+  if (to.meta.requiresRole && token) {
+    try {
+      // 从 token 中解析用户信息（简单解码）
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      const userRole = payload.role || 'user'
+      
+      console.log('🎭 Token 中的角色:', userRole)
+      console.log('📋 需要的角色:', to.meta.requiresRole)
+      
+      if (!to.meta.requiresRole.includes(userRole)) {
+        // 权限不足，重定向到首页
+        console.log('❌ 权限不足，重定向到 /')
+        return '/'
+      } else {
+        console.log('✅ 权限验证通过')
+      }
+    } catch (error) {
+      console.error('Token 解析失败:', error)
+      return '/login'
+    }
   }
 })
 

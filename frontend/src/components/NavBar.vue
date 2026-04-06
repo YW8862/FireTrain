@@ -10,10 +10,19 @@
         <span class="user-info">
           <el-avatar :size="32" icon="UserFilled" />
           <span class="user-name">{{ userName }}</span>
+          <!-- 管理员显示角色标签 -->
+          <el-tag v-if="isAdmin" size="small" :type="getRoleType(userStore.user?.role)">
+            {{ getRoleLabel(userStore.user?.role) }}
+          </el-tag>
           <el-icon class="el-icon--right"><arrow-down /></el-icon>
         </span>
         <template #dropdown>
           <el-dropdown-menu>
+            <!-- 管理员可进入后台 -->
+            <el-dropdown-item v-if="isAdmin" command="admin">
+              <el-icon><Monitor /></el-icon>
+              管理后台
+            </el-dropdown-item>
             <el-dropdown-item command="profile">个人中心</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
           </el-dropdown-menu>
@@ -24,14 +33,27 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, UserFilled } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, Monitor } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+// 组件挂载时，如果 token 存在但 userInfo 为空，自动获取用户信息
+onMounted(async () => {
+  if (userStore.token && !userStore.userInfo) {
+    console.log('🔄 NavBar: Token 存在但 userInfo 为空，自动获取用户信息')
+    try {
+      await userStore.fetchUserInfo()
+      console.log('✅ NavBar: 用户信息已加载', userStore.userInfo)
+    } catch (error) {
+      console.error('❌ NavBar: 获取用户信息失败', error)
+    }
+  }
+})
 
 // 属性
 defineProps({
@@ -46,14 +68,53 @@ const userName = computed(() => {
   return userStore.user?.username || '用户'
 })
 
+// 是否为管理员或 Root
+const isAdmin = computed(() => {
+  const role = userStore.user?.role
+  return role === 'admin' || role === 'root'
+})
+
+// 是否可以切换角色
+const canSwitchRole = computed(() => {
+  return userStore.user?.can_switch_role === true
+})
+
+// 是否为用户模式
+const isUserMode = computed(() => {
+  return userStore.user?.role === 'user'
+})
+
+// 获取角色标签类型
+const getRoleType = (role) => {
+  const roleMap = {
+    'root': 'danger',
+    'admin': 'warning',
+    'user': 'info'
+  }
+  return roleMap[role] || 'info'
+}
+
+// 获取角色标签文本
+const getRoleLabel = (role) => {
+  const labelMap = {
+    'root': 'Root',
+    'admin': '管理员',
+    'user': '普通用户'
+  }
+  return labelMap[role] || role
+}
+
 // 返回首页
 const goToHome = () => {
   router.push('/')
 }
 
 // 处理下拉菜单命令
-const handleCommand = (command) => {
+const handleCommand = async (command) => {
   switch (command) {
+    case 'admin':
+      router.push('/admin/dashboard')
+      break
     case 'profile':
       router.push('/profile')
       break

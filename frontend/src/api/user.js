@@ -63,3 +63,16 @@ export function logout() {
     method: 'post'
   })
 }
+
+/**
+ * 切换角色（管理员 ↔ 普通用户）
+ * @param {Object} data - 切换数据
+ * @param {string} data.target_role - 目标角色 ('user' | 'admin')
+ */
+export function switchRoleApi(data) {
+  return request({
+    url: '/user/switch-role',
+    method: 'post',
+    data
+  })
+}

@@ -259,7 +259,12 @@ async def switch_role(
     切换用户角色（仅管理员可临时切换为普通用户）
     
     - **target_role**: 目标角色 ("user" 或 "admin")
+    - 返回新的 Token，其中包含切换后的角色
     """
+    from app.services.user_service import create_access_token
+    from datetime import timedelta
+    from app.core.config import settings
+    
     user_repo = UserRepository(db)
     user_service = UserService(user_repo)
     
@@ -268,7 +273,22 @@ async def switch_role(
             current_user["id"], 
             role_data.target_role
         )
-        return RoleSwitchResponse(**result)
+        
+        # 生成新的 Token，包含切换后的角色
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        new_token = create_access_token(
+            data={
+                "sub": current_user["username"],
+                "user_id": current_user["id"],
+                "role": result["role"]  # 使用切换后的角色
+            },
+            expires_delta=access_token_expires
+        )
+        
+        # 返回结果，包含新 Token
+        response = RoleSwitchResponse(**result)
+        response.token = new_token  # type: ignore
+        return response
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

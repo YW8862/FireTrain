@@ -117,7 +117,11 @@ class UserService:
         # 生成 Token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user.username, "user_id": user.id},
+            data={
+                "sub": user.username,
+                "user_id": user.id,
+                "role": user.role  # ✅ 添加角色信息
+            },
             expires_delta=access_token_expires
         )
         
@@ -135,14 +139,14 @@ class UserService:
     
     async def switch_role(self, user_id: int, target_role: str) -> dict:
         """
-        切换用户角色（临时）
+        切换用户角色（临时，不修改数据库）
         
         Args:
             user_id: 用户 ID
             target_role: 目标角色 ("user" 或 "admin")
             
         Returns:
-            新的用户信息
+            临时的角色信息（用于生成新的 Token）
             
         Raises:
             ValueError: 当用户不允许切换或角色不支持时
@@ -162,21 +166,11 @@ class UserService:
         if target_role not in ["user", "admin"]:
             raise ValueError("不支持的角色切换")
         
-        # 保存原始角色
-        if target_role == "user":
-            # 切换到用户模式
-            user.original_role = user.role
-            user.role = "user"
-        else:
-            # 恢复管理员角色
-            user.role = user.original_role or "admin"
-            user.original_role = None
-        
-        # 更新数据库
-        await self.user_repo.update(user, {})
-        
+        # 注意：这里不修改数据库，只返回临时角色信息
+        # 前端需要使用这个信息生成新的 Token
         return {
-            "role": user.role,
-            "original_role": user.original_role,
-            "can_switch_role": user.can_switch_role
+            "role": target_role,
+            "original_role": user.role if target_role == "user" else None,
+            "can_switch_role": user.can_switch_role,
+            "real_role": user.role  # 真实角色（不变）
         }

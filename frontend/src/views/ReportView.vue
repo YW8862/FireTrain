@@ -5,11 +5,58 @@
 
     <el-card class="report-card">
       <div class="report-header">
-        <h2>📊 训练评分报告</h2>
-        <el-button @click="goBack">返回</el-button>
+        <div class="header-left">
+          <h2>📊 训练评分报告</h2>
+          <!-- 管理员视图标识 -->
+          <el-tag v-if="isAdmin" type="warning" size="small" style="margin-left: 10px">
+            <el-icon><UserFilled /></el-icon>
+            管理员视图
+          </el-tag>
+        </div>
+        <div class="header-right">
+          <!-- 管理员返回管理后台 -->
+          <el-button v-if="isAdmin" @click="goToAdminDashboard" type="primary">
+            <el-icon><Back /></el-icon>
+            返回管理后台
+          </el-button>
+          <!-- 普通用户返回首页 -->
+          <el-button v-else @click="goBack">返回</el-button>
+        </div>
       </div>
 
       <div v-loading="loading" class="report-content">
+        <!-- 管理员视图：用户信息卡片 -->
+        <el-card v-if="isAdmin && trainingInfo" shadow="hover" class="admin-info-card">
+          <template #header>
+            <div class="card-header">
+              <span>👤 训练记录详情</span>
+              <el-tag type="info" size="small">ID: {{ trainingInfo.id }}</el-tag>
+            </div>
+          </template>
+          <el-descriptions :column="3" border>
+            <el-descriptions-item label="用户名">
+              <el-tag type="primary">{{ trainingInfo.username }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="训练类型">
+              {{ getTrainingTypeLabel(trainingInfo.training_type) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getStatusType(trainingInfo.status)">
+                {{ getStatusLabel(trainingInfo.status) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="开始时间">
+              {{ formatDateTime(trainingInfo.created_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="完成时间">
+              {{ trainingInfo.completed_at ? formatDateTime(trainingInfo.completed_at) : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="训练时长">
+              {{ trainingInfo.duration_seconds ? `${trainingInfo.duration_seconds}秒` : '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
         <!-- 总分展示 -->
         <div class="total-score-section">
           <div class="score-title">{{ formatDate(new Date()) }}</div>
@@ -103,10 +150,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Warning, SuccessFilled } from '@element-plus/icons-vue'
+import { Warning, SuccessFilled, UserFilled, Back } from '@element-plus/icons-vue'
 import { getTrainingDetail } from '@/api/training'
 import * as echarts from 'echarts'
 import NavBar from '@/components/NavBar.vue'
@@ -114,9 +161,18 @@ import NavBar from '@/components/NavBar.vue'
 const route = useRoute()
 const router = useRouter()
 
+// 判断是否为管理员
+const isAdmin = computed(() => {
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  return userInfo.role === 'admin' || userInfo.role === 'root'
+})
+
 const loading = ref(false)
 const radarChartRef = ref(null)
 let radarChart = null
+
+// 训练记录完整信息（管理员视图）
+const trainingInfo = ref(null)
 
 // 报告数据
 const reportData = reactive({
@@ -189,6 +245,9 @@ const loadReportData = async () => {
   loading.value = true
   try {
     const res = await getTrainingDetail(reportData.training_id)
+    
+    // 保存完整训练信息（管理员视图）
+    trainingInfo.value = res
     
     // 解析数据 - 处理字符串到数字的转换
     reportData.total_score = parseFloat(res.total_score) || 0
@@ -296,6 +355,58 @@ const goBack = () => {
   router.push('/history')
 }
 
+// 管理员返回管理后台
+const goToAdminDashboard = () => {
+  router.push('/admin/dashboard')
+}
+
+// 获取训练类型标签
+const getTrainingTypeLabel = (type) => {
+  const labels = {
+    'fire_extinguisher': '灭火器操作',
+    'extinguisher': '灭火器操作'
+  }
+  return labels[type] || type
+}
+
+// 获取状态标签类型
+const getStatusType = (status) => {
+  const types = {
+    'done': 'success',
+    'completed': 'success',
+    'in_progress': 'warning',
+    'processing': 'info',
+    'failed': 'danger'
+  }
+  return types[status] || 'info'
+}
+
+// 获取状态标签文本
+const getStatusLabel = (status) => {
+  const labels = {
+    'done': '已完成',
+    'completed': '已完成',
+    'in_progress': '进行中',
+    'processing': '处理中',
+    'failed': '失败'
+  }
+  return labels[status] || status
+}
+
+// 格式化日期时间
+const formatDateTime = (datetime) => {
+  if (!datetime) return '-'
+  const date = new Date(datetime)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
 // 格式化日期
 const formatDate = (date) => {
   return date.toLocaleString('zh-CN', {
@@ -350,11 +461,38 @@ onUnmounted(() => {
   margin: 20px auto;
 }
 
+/* 管理员信息卡片 */
+.admin-info-card {
+  margin-bottom: 24px;
+  border-left: 4px solid #409eff;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
 .report-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e4e7ed;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .report-content {

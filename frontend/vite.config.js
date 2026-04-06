@@ -16,15 +16,16 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    strictPort: true,  // 强制使用指定端口，如果被占用则报错
     https: {
       key: fs.readFileSync('../certs/key.pem'),
       cert: fs.readFileSync('../certs/cert.pem')
     },
     proxy: {
       '/api': {
-        target: process.env.VITE_API_BASE_URL ? process.env.VITE_API_BASE_URL.replace('/api', '') : 'http://localhost:8000',
+        target: 'http://localhost:8000',  // 后端 HTTP 地址
         changeOrigin: true,
-        secure: false,
+        secure: false,  // 允许自签名证书
         ws: true
       }
     },

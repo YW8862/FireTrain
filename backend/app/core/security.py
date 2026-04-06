@@ -99,10 +99,18 @@ async def get_current_user_id(
     if payload is None:
         raise credentials_exception
     
+    # 🔍 调试：打印 Token 和 payload
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"🔑🔑🔑 Token (前50字符): {token[:50]}...")
+    logger.error(f"📦📦📦 Token Payload: {payload}")
+    
     # 从 token 中获取用户 ID
     user_id: Optional[int] = payload.get("user_id")
     if user_id is None:
         raise credentials_exception
+    
+    logger.error(f"🆔🆔🆔 从 Token 提取的 user_id: {user_id}")
     
     # 从数据库验证用户是否存在
     user_repo = UserRepository(db)
