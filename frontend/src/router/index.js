@@ -77,12 +77,12 @@ const routes = [
         component: () => import('@/views/admin/TrainingManagement.vue'),
         meta: { title: '训练数据管理' }
       },
-      {
-        path: 'videos',
-        name: 'AdminVideos',
-        component: () => import('@/views/admin/VideoDetection.vue'),
-        meta: { title: '视频检测' }
-      },
+      // {
+      //   path: 'videos',
+      //   name: 'AdminVideos',
+      //   component: () => import('@/views/admin/VideoDetection.vue'),
+      //   meta: { title: '视频检测' }
+      // },
       {
         path: 'video-upload',
         name: 'AdminVideoUpload',

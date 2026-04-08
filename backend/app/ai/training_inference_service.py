@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from app.ai.fire_extinguisher_detector import FireExtinguisherDetector
 from app.ai.pose_analyzer import PoseAnalyzer
+from app.core.config import settings
 
 
 class TrainingInferenceService:
@@ -34,17 +35,20 @@ class TrainingInferenceService:
     
     def __init__(
         self,
-        yolo_model_path: str = "yolov8n.pt",
+        yolo_model_path: str = None,
         yolo_conf_threshold: float = 0.5,
         use_pose_analysis: bool = True
     ):
         """初始化推理服务
         
         Args:
-            yolo_model_path: YOLO 模型路径
+            yolo_model_path: YOLO 模型路径（默认使用配置中的路径）
             yolo_conf_threshold: YOLO 置信度阈值
             use_pose_analysis: 是否启用姿态分析
         """
+        if yolo_model_path is None:
+            yolo_model_path = settings.YOLO_MODEL_PATH
+            
         self.yolo_detector = FireExtinguisherDetector(
             model_path=yolo_model_path,
             conf_threshold=yolo_conf_threshold

@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.repositories.training_repository import TrainingRepository
 from app.services.training_service import TrainingService
 from app.core.security import get_current_user_id
+from app.core.config import settings
 from app.schemas.training import (
     TrainingDetailResponse,
     TrainingHistoryResponse,
@@ -178,7 +179,7 @@ async def precheck_training(
         # 快速 AI 分析（只分析前 5 秒的视频）
         from app.ai.training_inference_service import TrainingInferenceService
         inference_service = TrainingInferenceService(
-            yolo_model_path="yolov8.onnx",
+            yolo_model_path=settings.YOLO_MODEL_PATH,
             yolo_conf_threshold=0.5,
             use_pose_analysis=True
         )
@@ -244,7 +245,7 @@ async def upload_video_file(
         )
     
     # 保存文件
-    video_dir = "./data/videos"
+    video_dir = "../data/videos"
     os.makedirs(video_dir, exist_ok=True)
     
     # 生成唯一文件名

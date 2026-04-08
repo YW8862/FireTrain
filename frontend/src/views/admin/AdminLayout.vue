@@ -54,11 +54,6 @@
             <span>训练数据</span>
           </el-menu-item>
           
-          <el-menu-item index="/admin/videos">
-            <el-icon><VideoCamera /></el-icon>
-            <span>视频检测</span>
-          </el-menu-item>
-          
           <el-menu-item index="/admin/video-upload">
             <el-icon><Upload /></el-icon>
             <span>上传视频检测</span>

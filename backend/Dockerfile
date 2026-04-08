@@ -29,8 +29,8 @@ RUN pip install --upgrade pip && \
 # 复制应用代码
 COPY . .
 
-# 创建数据目录
-RUN mkdir -p /app/data/models /app/data/videos /app/logs
+# 创建数据目录（实际数据通过卷挂载）
+RUN mkdir -p /app/data/models /app/data/videos /app/data/matplotlib_cache /app/logs
 
 # 暴露端口
 EXPOSE 8000

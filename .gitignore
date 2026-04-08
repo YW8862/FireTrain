@@ -49,6 +49,9 @@ data/models/*
 !data/videos/.gitkeep
 !data/models/.gitkeep
 
+# Matplotlib cache
+data/matplotlib_cache/
+
 # Local databases
 *.db
 *.sqlite

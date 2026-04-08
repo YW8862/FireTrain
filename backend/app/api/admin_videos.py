@@ -18,6 +18,7 @@ from app.api.users import get_current_user
 from app.middleware.permission import require_role
 from app.repositories.user_repository import UserRepository
 from app.repositories.training_repository import TrainingRepository
+from app.core.config import settings
 from app.services.training_service import TrainingService
 from app.schemas.admin_video import AdminVideoUploadResponse
 from app.models.training_record import TrainingRecord
@@ -67,7 +68,7 @@ async def admin_upload_video(
         )
     
     # 3. 保存视频文件
-    video_dir = "./data/videos/admin_uploads"
+    video_dir = "../data/videos/admin_uploads"
     os.makedirs(video_dir, exist_ok=True)
     
     unique_filename = f"{uuid.uuid4()}{file_extension}"
@@ -202,7 +203,7 @@ async def process_admin_video_analysis(training_id: int):
             
             # 初始化 AI 推理服务
             inference_service = TrainingInferenceService(
-                yolo_model_path="yolov8.onnx",
+                yolo_model_path=settings.YOLO_MODEL_PATH,
                 yolo_conf_threshold=0.5,
                 use_pose_analysis=True
             )

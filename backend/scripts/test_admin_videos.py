@@ -50,7 +50,7 @@ async def test_video_detection_api():
             test_task = VideoDetectionTask(
                 uploader_id=29,  # admin_manager 的 ID
                 file_name="test_video.mp4",
-                file_path="./data/videos/admin_uploads/test.mp4",
+                file_path="../data/videos/admin_uploads/test.mp4",
                 file_size=1024000,
                 status=VideoTaskStatus.PENDING
             )

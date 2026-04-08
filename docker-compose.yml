@@ -40,6 +40,7 @@ services:
       - ./backend:/app
       - ./data/models:/app/data/models
       - ./data/videos:/app/data/videos
+      - ./data/matplotlib_cache:/app/data/matplotlib_cache
       - ./certs:/app/certs
     depends_on:
       mysql:

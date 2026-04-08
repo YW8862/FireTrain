@@ -17,7 +17,7 @@ class TestTrainingInferenceService:
     def test_analyze_mock_video(self):
         """测试分析模拟视频"""
         # 创建一个空的测试视频（或使用真实视频文件）
-        video_path = "data/videos/test_videos/mock_training.mp4"
+        video_path = "../data/videos/test_videos/mock_training.mp4"
         
         if not Path(video_path).exists():
             pytest.skip("测试视频不存在，跳过此测试")
@@ -206,7 +206,7 @@ class TestTrainingInferenceService:
         # 这个测试需要真实的灭火器操作视频
         # 可以手动准备视频后运行
         
-        video_path = "data/videos/real_training.mp4"
+        video_path = "../data/videos/real_training.mp4"
         
         if not Path(video_path).exists():
             pytest.skip("真实训练视频不存在，跳过此测试")

@@ -30,6 +30,16 @@ class Settings:
     APP_VERSION: str = "0.1.0"
 
     # ===========================================
+    # AI 模型和数据路径配置
+    # ===========================================
+    MODEL_DIR: str = os.getenv("MODEL_DIR", "../data/models")
+    VIDEO_DIR: str = os.getenv("VIDEO_DIR", "../data/videos")
+    MATPLOTLIB_CACHE_DIR: str = os.getenv("MATPLOTLIB_CACHE_DIR", "../data/matplotlib_cache")
+    
+    # YOLO 模型文件路径
+    YOLO_MODEL_PATH: str = os.path.join(MODEL_DIR, "yolov8.onnx")
+
+    # ===========================================
     # 大模型（LLM）评分配置
     # 支持任何兼容 OpenAI Chat Completions 接口的服务：
     #   - OpenAI:   base_url=https://api.openai.com/v1, model=gpt-4o-mini

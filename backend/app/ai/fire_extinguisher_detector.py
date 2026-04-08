@@ -1,12 +1,13 @@
 """YOLOv8 目标检测模块（ONNX Runtime 版本）
 
 使用 ONNX Runtime 进行高性能推理。
-模型文件：backend/yolov8.onnx
+模型文件：data/models/yolov8.onnx
 """
 import cv2
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 import onnxruntime as ort
+from app.core.config import settings
 
 
 class FireExtinguisherDetector:
@@ -43,7 +44,7 @@ class FireExtinguisherDetector:
     
     def __init__(
         self,
-        model_path: str = "yolov8.onnx",
+        model_path: str = None,
         conf_threshold: float = 0.5,
         iou_threshold: float = 0.45,
         img_size: int = 640,
@@ -52,8 +53,8 @@ class FireExtinguisherDetector:
         """初始化 YOLOv8 检测器（ONNX Runtime 版本）
         
         Args:
-            model_path: ONNX 模型文件路径
-                - yolov8.onnx: 默认模型（推荐）
+            model_path: ONNX 模型文件路径（默认使用配置中的路径）
+                - data/models/yolov8.onnx: 默认模型（推荐）
                 - yolov8n.onnx: nano 模型（最快）
                 - yolov8s.onnx: small 模型（推荐）
                 - yolov8m.onnx: medium 模型（更准确）
@@ -62,6 +63,9 @@ class FireExtinguisherDetector:
             img_size: 输入图像尺寸
             device: 计算设备 ("cpu" 或 "cuda")
         """
+        if model_path is None:
+            model_path = settings.YOLO_MODEL_PATH
+            
         self.model_path = model_path
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
