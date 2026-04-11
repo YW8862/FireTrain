@@ -35,11 +35,10 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
     
-    async def create(self, user_data: dict) -> User:
+    async def create(self, user: User) -> User:
         """创建新用户"""
-        user = User(**user_data)
         self.session.add(user)
-        await self.session.flush()  # 获取生成的 ID
+        await self.session.flush()
         await self.session.refresh(user)
         return user
     
@@ -62,11 +61,38 @@ class UserRepository:
         await self.session.delete(user)
         await self.session.commit()
     
+    async def count_by_role(self, role: str) -> int:
+        """统计指定角色的用户数量"""
+        from sqlalchemy import select, func
+
+        count_query = select(func.count(User.id)).where(User.role == role)
+        result = await self.session.execute(count_query)
+        return result.scalar()
+    
+    async def count_all(self) -> int:
+        """统计所有用户数量"""
+        from sqlalchemy import select, func
+        
+        count_query = select(func.count(User.id))
+        result = await self.session.execute(count_query)
+        return result.scalar()
+    
+    async def count_by_date_range(self, start_date: datetime, end_date: datetime) -> int:
+        """统计指定日期范围内的用户数量"""
+        from sqlalchemy import select, func
+        
+        count_query = select(func.count(User.id)).where(
+            User.created_at >= start_date,
+            User.created_at < end_date
+        )
+        result = await self.session.execute(count_query)
+        return result.scalar()
+
     async def query_with_filters(
         self,
         page: int = 1,
         page_size: int = 20,
-        role_filter: Optional[str] = None,
+        role_filter: Optional[str | list[str]] = None,
         keyword: Optional[str] = None
     ) -> tuple[list[dict], int]:
         """
@@ -83,8 +109,12 @@ class UserRepository:
         
         # 角色过滤
         if role_filter:
-            query = query.where(User.role == role_filter)
-            count_query = count_query.where(User.role == role_filter)
+            if isinstance(role_filter, list):
+                query = query.where(User.role.in_(role_filter))
+                count_query = count_query.where(User.role.in_(role_filter))
+            else:
+                query = query.where(User.role == role_filter)
+                count_query = count_query.where(User.role == role_filter)
         
         # 关键词搜索（用户名或邮箱）
         if keyword:

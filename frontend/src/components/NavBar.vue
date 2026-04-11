@@ -11,8 +11,8 @@
           <el-avatar :size="32" icon="UserFilled" />
           <span class="user-name">{{ userName }}</span>
           <!-- 管理员显示角色标签 -->
-          <el-tag v-if="isAdmin" size="small" :type="getRoleType(userStore.user?.role)">
-            {{ getRoleLabel(userStore.user?.role) }}
+          <el-tag v-if="isAdmin" size="small" :type="getRoleType(userStore.effectiveRole)">
+            {{ getRoleLabel(userStore.effectiveRole) }}
           </el-tag>
           <el-icon class="el-icon--right"><arrow-down /></el-icon>
         </span>
@@ -22,6 +22,11 @@
             <el-dropdown-item v-if="isAdmin" command="admin">
               <el-icon><Monitor /></el-icon>
               管理后台
+            </el-dropdown-item>
+            <!-- 显示切换回管理员模式选项 -->
+            <el-dropdown-item v-if="canSwitchBack" command="switch-back">
+              <el-icon><Monitor /></el-icon>
+              切换回管理员模式
             </el-dropdown-item>
             <el-dropdown-item command="profile">个人中心</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
@@ -68,20 +73,25 @@ const userName = computed(() => {
   return userStore.user?.username || '用户'
 })
 
-// 是否为管理员或 Root
+// 是否为管理员或 Root（基于有效角色）
 const isAdmin = computed(() => {
-  const role = userStore.user?.role
+  const role = userStore.effectiveRole
   return role === 'admin' || role === 'root'
 })
 
 // 是否可以切换角色
 const canSwitchRole = computed(() => {
-  return userStore.user?.can_switch_role === true
+  return userStore.canSwitchRole
+})
+
+// 是否可以切换回管理员模式（当前是用户模式且有原始角色）
+const canSwitchBack = computed(() => {
+  return userStore.viewRole === 'user' && ['admin', 'root'].includes(userStore.userInfo?.role)
 })
 
 // 是否为用户模式
 const isUserMode = computed(() => {
-  return userStore.user?.role === 'user'
+  return userStore.effectiveRole === 'user'
 })
 
 // 获取角色标签类型
@@ -115,6 +125,9 @@ const handleCommand = async (command) => {
     case 'admin':
       router.push('/admin/dashboard')
       break
+    case 'switch-back':
+      await handleSwitchBackToAdmin()
+      break
     case 'profile':
       router.push('/profile')
       break
@@ -122,6 +135,15 @@ const handleCommand = async (command) => {
       handleLogout()
       break
   }
+}
+
+// 切换回管理员模式（纯前端切换）
+const handleSwitchBackToAdmin = async () => {
+  // 清除视图角色，恢复为数据库中的真实角色
+  userStore.setViewRole(null)
+  
+  ElMessage.success(`已切换回${userStore.userInfo?.role === 'root' ? 'Root' : '管理员'}模式`)
+  router.push('/admin/dashboard')
 }
 
 // 退出登录

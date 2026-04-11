@@ -84,3 +84,33 @@ class RoleSwitchResponse(BaseModel):
     original_role: str | None = None
     can_switch_role: bool
     token: str | None = None  # 新的 Token
+
+
+# ============ 管理员管理 Schema ============
+
+class AdminCreateRequest(BaseModel):
+    """创建管理员请求"""
+    username: str = Field(..., min_length=3, max_length=50, description="用户名")
+    email: EmailStr = Field(..., description="邮箱")
+    password: str = Field(..., min_length=6, max_length=50, description="密码")
+    role: str = Field(..., description="角色 (admin 或 root)")
+    can_switch_role: bool = Field(True, description="是否允许角色切换")
+
+
+class AdminUpdateRoleRequest(BaseModel):
+    """修改管理员角色请求"""
+    role: str = Field(..., description="目标角色 (user, admin 或 root)")
+
+
+class AdminInfoResponse(BaseModel):
+    """管理员信息响应"""
+    id: int
+    username: str
+    email: str
+    role: str
+    can_switch_role: bool
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

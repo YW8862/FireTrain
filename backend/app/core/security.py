@@ -1,6 +1,7 @@
 """JWT 鉴权相关的工具函数和依赖注入"""
 import time
-from typing import Optional, Set
+from datetime import datetime, timedelta
+from typing import Optional, Set, Dict, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -10,10 +11,49 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_db
 from app.repositories.user_repository import UserRepository
-from app.services.user_service import decode_access_token
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/user/login")
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """
+    创建 JWT access token
+
+    Args:
+        data: 要编码到 token 中的数据
+        expires_delta: token 过期时间，如果不提供则使用默认配置
+
+    Returns:
+        编码后的 JWT token 字符串
+    """
+    to_encode = data.copy()
+
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return encoded_jwt
+
+
+def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    解码 JWT access token
+
+    Args:
+        token: JWT token 字符串
+
+    Returns:
+        解码后的 payload 字典，如果 token 无效则返回 None
+    """
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        return payload
+    except JWTError:
+        return None
 
 
 class TokenBlacklist:

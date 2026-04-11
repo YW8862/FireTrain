@@ -10,16 +10,16 @@
           <span class="user-info">
             <el-icon><User /></el-icon>
             {{ userStore.userInfo?.username }}
-            <el-tag size="small" :type="getRoleType(userStore.userInfo?.role)">
-              {{ getRoleLabel(userStore.userInfo?.role) }}
+            <el-tag size="small" :type="getRoleType(userStore.effectiveRole)">
+              {{ getRoleLabel(userStore.effectiveRole) }}
             </el-tag>
             <el-icon><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="user-view">
+              <el-dropdown-item command="switch-to-user">
                 <el-icon><User /></el-icon>
-                用户界面
+                切换到用户模式
               </el-dropdown-item>
               <el-dropdown-item command="profile">个人中心</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
@@ -64,9 +64,9 @@
             <span>操作日志</span>
           </el-menu-item>
           
-          <!-- 仅 Root 可见 -->
+          <!-- 仅 Root 可见（基于有效角色） -->
           <el-menu-item 
-            v-if="userStore.userInfo?.role === 'root'" 
+            v-if="userStore.effectiveRole === 'root'" 
             index="/admin/admins"
           >
             <el-icon><Key /></el-icon>
@@ -97,8 +97,8 @@ const userStore = useUserStore()
 // 当前激活的菜单
 const activeMenu = computed(() => route.path)
 
-// 是否为用户模式
-const isUserMode = computed(() => userStore.userInfo?.role === 'user')
+// 是否为用户模式（基于有效角色）
+const isUserMode = computed(() => userStore.effectiveRole === 'user')
 
 // 获取角色标签类型
 const getRoleType = (role) => {
@@ -123,9 +123,8 @@ const getRoleLabel = (role) => {
 // 下拉菜单命令处理
 const handleCommand = async (command) => {
   switch (command) {
-    case 'user-view':
-      // 管理员查看用户界面（不改变身份）
-      router.push('/training')
+    case 'switch-to-user':
+      await handleSwitchRole()
       break
     case 'profile':
       router.push('/profile')
@@ -133,6 +132,24 @@ const handleCommand = async (command) => {
     case 'logout':
       await handleLogout()
       break
+  }
+}
+
+// 切换到用户模式（不修改数据库，只改变视图）
+const handleSwitchRole = async () => {
+  try {
+    // 使用纯前端切换，不调用后端API
+    const success = userStore.switchViewRole('user')
+    
+    if (success) {
+      ElMessage.success('已切换到用户模式')
+      router.push('/')
+    } else {
+      ElMessage.error('您没有权限切换角色')
+    }
+  } catch (error) {
+    console.error('切换角色失败:', error)
+    ElMessage.error('切换角色失败')
   }
 }
 

@@ -9,10 +9,10 @@ from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import token_blacklist
+from app.core.security import token_blacklist, decode_access_token, create_access_token
 from app.db.session import get_db
 from app.repositories.user_repository import UserRepository
-from app.services.user_service import UserService, decode_access_token
+from app.services.user_service import UserService
 from app.schemas.user import (
     LoginResponse,
     MessageResponse,

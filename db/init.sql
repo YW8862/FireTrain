@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) NOT NULL DEFAULT 'student',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     last_login_at DATETIME(6) NULL,
+    can_switch_role TINYINT(1) NULL DEFAULT 0,
+    original_role VARCHAR(20) NULL,
     created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
     updated_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
     CONSTRAINT uq_users_username UNIQUE (username),
@@ -73,4 +75,39 @@ CREATE TABLE IF NOT EXISTS training_statistics (
     CONSTRAINT fk_training_statistics_user_id_users
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE CASCADE
+);
+
+-- 管理员操作日志表
+CREATE TABLE IF NOT EXISTS admin_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    admin_id INT NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    target_type VARCHAR(50) NULL,
+    target_id INT NULL,
+    details JSON NULL,
+    ip_address VARCHAR(45) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_admin_logs_admin_id_users
+        FOREIGN KEY (admin_id) REFERENCES users(id),
+    INDEX idx_admin_logs_admin_id (admin_id),
+    INDEX idx_admin_logs_created_at (created_at)
+);
+
+-- 视频检测任务表
+CREATE TABLE IF NOT EXISTS video_detection_tasks (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    uploader_id INT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NULL,
+    status ENUM('pending', 'processing', 'completed', 'failed') NOT NULL DEFAULT 'pending',
+    ai_result JSON NULL,
+    error_message TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME NULL,
+    CONSTRAINT fk_video_detection_tasks_uploader_id_users
+        FOREIGN KEY (uploader_id) REFERENCES users(id),
+    INDEX idx_video_detection_tasks_uploader_id (uploader_id),
+    INDEX idx_video_detection_tasks_status (status),
+    INDEX idx_video_detection_tasks_created_at (created_at)
 );

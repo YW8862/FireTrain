@@ -42,6 +42,7 @@ logs/
 *.log
 tmp/
 .cache/
+.lingma/
 
 # Data outputs
 data/videos/*

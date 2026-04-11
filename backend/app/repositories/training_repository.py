@@ -210,3 +210,81 @@ class TrainingRepository:
             })
         
         return training_list, total
+    
+    async def count_all(self) -> int:
+        """统计所有训练记录数量"""
+        from sqlalchemy import select, func
+        
+        count_query = select(func.count(TrainingRecord.id))
+        result = await self.session.execute(count_query)
+        return result.scalar()
+    
+    async def count_by_date_range(self, start_date: datetime, end_date: datetime) -> int:
+        """统计指定日期范围内的训练记录数量"""
+        from sqlalchemy import select, func
+        
+        count_query = select(func.count(TrainingRecord.id)).where(
+            TrainingRecord.created_at >= start_date,
+            TrainingRecord.created_at < end_date
+        )
+        result = await self.session.execute(count_query)
+        return result.scalar()
+    
+    async def get_average_score(self) -> Optional[float]:
+        """获取平均分数"""
+        from sqlalchemy import select, func
+        
+        avg_query = select(func.avg(TrainingRecord.total_score)).where(
+            TrainingRecord.total_score.isnot(None)
+        )
+        result = await self.session.execute(avg_query)
+        return result.scalar()
+    
+    async def get_user_history(
+        self,
+        user_id: int,
+        page: int = 1,
+        page_size: int = 10,
+        status: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> tuple[List[TrainingRecord], int]:
+        """
+        获取用户训练历史
+        
+        Returns:
+            (训练记录列表, 总数)
+        """
+        # 构建基础查询
+        query = select(TrainingRecord).where(TrainingRecord.user_id == user_id)
+        
+        # 添加筛选条件
+        conditions = []
+        if status:
+            conditions.append(TrainingRecord.status == status)
+        if start_date:
+            conditions.append(TrainingRecord.created_at >= start_date)
+        if end_date:
+            conditions.append(TrainingRecord.created_at <= end_date)
+        
+        if conditions:
+            query = query.where(and_(*conditions))
+        
+        # 按创建时间倒序
+        query = query.order_by(TrainingRecord.created_at.desc())
+        
+        # 获取总数
+        count_query = select(TrainingRecord).where(TrainingRecord.user_id == user_id)
+        if conditions:
+            count_query = count_query.where(and_(*conditions))
+        total_result = await self.session.execute(count_query)
+        total = len(total_result.scalars().all())
+        
+        # 分页
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        
+        result = await self.session.execute(query)
+        records = result.scalars().all()
+        
+        return records, total

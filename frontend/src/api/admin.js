@@ -82,3 +82,58 @@ export function getAdminLogs(params) {
     params
   })
 }
+
+/**
+ * 获取管理员列表
+ * @param {Object} params - 查询参数
+ * @param {number} params.page - 页码
+ * @param {number} params.page_size - 每页数量
+ * @param {string} params.keyword - 搜索关键词
+ */
+export function getAdmins(params) {
+  return request({
+    url: '/admin/admins',
+    method: 'get',
+    params
+  })
+}
+
+/**
+ * 创建管理员
+ * @param {Object} data - 管理员数据
+ * @param {string} data.username - 用户名
+ * @param {string} data.email - 邮箱
+ * @param {string} data.password - 密码
+ * @param {string} data.role - 角色 (admin 或 root)
+ */
+export function createAdmin(data) {
+  return request({
+    url: '/admin/admins',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 删除管理员
+ * @param {number} adminId - 管理员ID
+ */
+export function deleteAdmin(adminId) {
+  return request({
+    url: `/admin/admins/${adminId}`,
+    method: 'delete'
+  })
+}
+
+/**
+ * 修改管理员角色
+ * @param {number} adminId - 管理员ID
+ * @param {string} role - 新角色
+ */
+export function updateAdminRole(adminId, role) {
+  return request({
+    url: `/admin/admins/${adminId}/role`,
+    method: 'put',
+    data: { role }
+  })
+}

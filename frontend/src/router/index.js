@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/store/user'
 
 const routes = [
   {
@@ -96,6 +97,12 @@ const routes = [
         meta: { title: '操作日志' }
       },
       {
+        path: 'admins',
+        name: 'AdminManagement',
+        component: () => import('@/views/admin/AdminManagement.vue'),
+        meta: { title: '管理员管理', requiresRole: ['root'] }
+      },
+      {
         path: 'report/:id',
         name: 'AdminReport',
         component: () => import('@/views/admin/AdminReportView.vue'),
@@ -126,14 +133,23 @@ router.beforeEach((to, _from) => {
     return '/login'
   }
   
-  // 检查角色权限
+  // 检查角色权限（基于视图角色）
   if (to.meta.requiresRole && token) {
     try {
-      // 从 token 中解析用户信息（简单解码）
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      const userRole = payload.role || 'user'
+      const userStore = useUserStore()
       
-      console.log('🎭 Token 中的角色:', userRole)
+      // 如果 userStore 已初始化，使用 effectiveRole
+      let userRole
+      if (userStore.userInfo) {
+        userRole = userStore.effectiveRole
+        console.log('🎭 使用 store 中的有效角色:', userRole)
+      } else {
+        // 否则从 token 中解析（fallback）
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        userRole = payload.role || 'user'
+        console.log('🎭 从 Token 中解析角色:', userRole)
+      }
+      
       console.log('📋 需要的角色:', to.meta.requiresRole)
       
       if (!to.meta.requiresRole.includes(userRole)) {
@@ -144,7 +160,7 @@ router.beforeEach((to, _from) => {
         console.log('✅ 权限验证通过')
       }
     } catch (error) {
-      console.error('Token 解析失败:', error)
+      console.error('权限验证失败:', error)
       return '/login'
     }
   }
