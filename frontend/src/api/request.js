@@ -2,21 +2,16 @@ import axios from 'axios'
 
 // 创建 axios 实例
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
-// 开发环境：处理 HTTPS 自签名证书问题
-// 注意：这仅在开发环境下使用，生产环境应该使用正式的 CA 证书
+// 开发环境下，浏览器只需要信任前端 HTTPS 入口证书。
 if (import.meta.env.DEV) {
-  // 添加对自签名证书的支持（仅开发环境）
-  const originalCreate = axios.create;
-  
-  // 在全局配置中允许自签名证书（浏览器会自动处理）
-  console.log('🔧 开发模式：已启用 HTTPS 支持（可能需要手动信任证书）');
+  console.log('🔧 开发模式：API 通过当前 HTTPS 站点代理到本地 HTTP 后端');
 }
 
 // 添加请求日志
@@ -48,17 +43,17 @@ request.interceptors.response.use(
     // 添加详细的错误信息到 error 对象，供上层使用
     if (error.code === 'ERR_CERT_AUTHORITY_INVALID') {
       error.customMessage = 'SSL 证书不受信任'
-      error.suggestion = '请在浏览器中访问 https://localhost:8000 并手动信任证书，然后重试'
+      error.suggestion = '请在浏览器中打开当前前端地址并手动信任 HTTPS 证书，然后重试'
       // 自动打开新窗口让用户信任证书
       if (!window._certTrustOpened) {
         window._certTrustOpened = true
         const confirmTrust = confirm(
           '检测到 SSL 证书问题。\n\n' +
           '这是开发环境的自签名证书，需要在浏览器中手动信任。\n\n' +
-          '点击“确定”在新窗口中打开后端地址以信任证书。'
+          '点击“确定”在新窗口中打开当前站点以信任证书。'
         )
         if (confirmTrust) {
-          window.open('https://localhost:8000', '_blank')
+          window.open(window.location.origin, '_blank')
         }
         setTimeout(() => { window._certTrustOpened = false }, 5000)
       }
@@ -71,7 +66,7 @@ request.interceptors.response.use(
     } else if (error.message === 'Network Error') {
       // 处理一般网络错误
       error.customMessage = '网络错误'
-      error.suggestion = '请检查：\n1. 后端服务是否运行\n2. HTTPS 证书是否有效\n3. 防火墙设置'
+      error.suggestion = '请检查：\n1. 前端 HTTPS 页面证书是否已信任\n2. 后端 HTTP 服务是否运行\n3. 代理配置是否正确'
     }
     
     if (error.response) {
@@ -82,9 +77,14 @@ request.interceptors.response.use(
       
       switch (status) {
         case 401:
-          error.customMessage = '未授权，请重新登录'
-          localStorage.removeItem('token')
-          window.location.href = '/login'
+          // 登录接口返回 401 代表账号或密码错误，不应该再次强制跳回登录页。
+          if (error.config?.url?.includes('/user/login')) {
+            error.customMessage = error.response.data?.detail || '账号或密码错误，请重新输入'
+          } else {
+            error.customMessage = '未授权，请重新登录'
+            localStorage.removeItem('token')
+            window.location.href = '/login'
+          }
           break
         case 403:
           error.customMessage = '拒绝访问'
@@ -101,7 +101,7 @@ request.interceptors.response.use(
     } else if (error.request) {
       // 请求已发送但没有收到响应
       error.customMessage = '网络错误：无法连接到服务器'
-      error.suggestion = '请检查：\n1. 后端服务是否正常运行\n2. 网络连接是否稳定\n3. 防火墙设置是否阻止请求'
+      error.suggestion = '请检查：\n1. 前端代理是否正常\n2. 后端 HTTP 服务是否正常运行\n3. 网络连接和防火墙设置'
       console.error('网络错误详情:', {
         url: error.config?.url,
         method: error.config?.method,

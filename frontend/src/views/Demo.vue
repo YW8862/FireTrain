@@ -81,7 +81,7 @@
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="API 文档">
-                  <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a>
+                  <a :href="docsUrl" target="_blank">{{ docsUrl }}</a>
                 </el-descriptions-item>
                 <el-descriptions-item label="健康检查">
                   <el-tag :type="healthStatus ? 'success' : 'danger'">
@@ -95,9 +95,9 @@
               <div class="api-links">
                 <h3>🔗 快速链接</h3>
                 <ul>
-                  <li><a href="http://localhost:8000/docs" target="_blank">Swagger API 文档</a></li>
-                  <li><a href="http://localhost:8000/redoc" target="_blank">ReDoc 文档</a></li>
-                  <li><a href="http://localhost:8000/health" target="_blank">健康检查</a></li>
+                  <li><a :href="docsUrl" target="_blank">Swagger API 文档</a></li>
+                  <li><a :href="redocUrl" target="_blank">ReDoc 文档</a></li>
+                  <li><a :href="healthUrl" target="_blank">健康检查</a></li>
                 </ul>
               </div>
             </el-card>
@@ -115,6 +115,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+
+const apiBaseUrl = '/api'
+const docsUrl = '/docs'
+const redocUrl = '/redoc'
+const healthUrl = '/health'
 
 // 登录状态
 const showLogin = ref(true)
@@ -141,7 +146,7 @@ const registerForm = ref({
 // 检查后端健康状态
 const checkHealth = async () => {
   try {
-    const response = await fetch('http://localhost:8000/health')
+    const response = await fetch(healthUrl)
     if (response.ok) {
       healthStatus.value = true
       backendStatus.value = true
@@ -165,7 +170,7 @@ const handleLogin = async () => {
     formData.append('username', loginForm.value.username)
     formData.append('password', loginForm.value.password)
     
-    const response = await fetch('http://localhost:8000/api/user/login', {
+    const response = await fetch(`${apiBaseUrl}/user/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -197,7 +202,7 @@ const handleRegister = async () => {
   }
   
   try {
-    const response = await fetch('http://localhost:8000/api/user/register', {
+    const response = await fetch(`${apiBaseUrl}/user/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

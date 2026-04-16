@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import fs from 'fs'
 
+const backendTarget = 'http://localhost:8000'
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
@@ -23,10 +25,26 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',  // 后端 HTTP 地址
+        target: backendTarget,  // 统一由前端 HTTPS 入口代理到内部 HTTP 后端
         changeOrigin: true,
-        secure: false,  // 允许自签名证书
+        secure: false,
         ws: true
+      },
+      '/health': {
+        target: backendTarget,
+        changeOrigin: true
+      },
+      '/docs': {
+        target: backendTarget,
+        changeOrigin: true
+      },
+      '/redoc': {
+        target: backendTarget,
+        changeOrigin: true
+      },
+      '/openapi.json': {
+        target: backendTarget,
+        changeOrigin: true
       }
     },
     // 允许外部访问

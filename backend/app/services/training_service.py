@@ -4,6 +4,8 @@ import random
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+from fastapi.concurrency import run_in_threadpool
+
 from app.core.config import settings
 from app.models.training_record import TrainingRecord
 from app.repositories.training_repository import TrainingRepository
@@ -100,9 +102,11 @@ class TrainingService:
                 )
                 
                 # 分析视频
-                analysis_result = inference_service.analyze_video(
-                    video_path=training.video_path,
-                    training_type=training.training_type
+                analysis_result = await run_in_threadpool(
+                    lambda: inference_service.analyze_video(
+                        video_path=training.video_path,
+                        training_type=training.training_type
+                    )
                 )
                 
                 inference_service.close()

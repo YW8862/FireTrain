@@ -85,20 +85,9 @@ start_backend() {
     echo "📦 检查数据库..."
     python scripts/init_db.py 2>/dev/null || echo "✅ 数据库已存在"
     
-    # 检查 SSL 证书是否存在
-    CERT_FILE="$BASE_DIR/certs/cert.pem"
-    KEY_FILE="$BASE_DIR/certs/key.pem"
-    
-    # 启动 uvicorn
-    if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
-        echo "🔒 检测到 SSL 证书，启用 HTTPS..."
-        echo "📖 API 文档地址：https://localhost:8000/docs"
-        uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --ssl-certfile="$CERT_FILE" --ssl-keyfile="$KEY_FILE" >> "$LOG_DIR/backend.log" 2>&1 &
-    else
-        echo "⚠️  未检测到 SSL 证书，使用 HTTP..."
-        echo "📖 API 文档地址：http://localhost:8000/docs"
-        uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 >> "$LOG_DIR/backend.log" 2>&1 &
-    fi
+    echo "🔌 后端仅监听 HTTP，由前端 HTTPS 入口统一代理..."
+    echo "📖 后端文档（内部）: http://localhost:8000/docs"
+    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 >> "$LOG_DIR/backend.log" 2>&1 &
     
     BACKEND_PID=$!
     echo $BACKEND_PID > "$LOG_DIR/backend.pid"
@@ -170,9 +159,10 @@ show_access_info() {
     echo "=========================================="
     echo ""
     echo "📊 访问地址："
-    echo "   🌐 前端：http://localhost:5173"
-    echo "   🔌 后端 API: http://localhost:8000"
-    echo "   📖 API 文档：http://localhost:8000/docs"
+    echo "   🌐 前端：https://localhost:5173"
+    echo "   🔌 对外 API：https://localhost:5173/api"
+    echo "   📖 对外文档：https://localhost:5173/docs"
+    echo "   🧩 内部后端：http://localhost:8000"
     echo ""
     echo "📝 日志文件："
     echo "   后端日志：$LOG_DIR/backend.log"

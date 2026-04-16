@@ -18,3 +18,4 @@ class AdminVideoUploadResponse(BaseModel):
     username: str
     file_name: str
     status: str
+    save_duration_ms: int = Field(..., description="服务端落盘耗时（毫秒）")

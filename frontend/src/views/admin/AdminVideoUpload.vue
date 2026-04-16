@@ -51,7 +51,7 @@
             @click="handleUpload"
             :disabled="!uploadForm.username || !selectedFile"
           >
-            {{ uploading ? '上传并分析中...' : '开始上传并检测' }}
+            {{ uploading ? '视频上传中...' : '开始上传并检测' }}
           </el-button>
           <el-button 
             v-if="uploading" 
@@ -84,6 +84,7 @@
           <p><strong>目标用户：</strong>{{ uploadResult.username }}</p>
           <p><strong>文件名：</strong>{{ uploadResult.file_name }}</p>
           <p><strong>状态：</strong>{{ uploadResult.status }}</p>
+          <p><strong>服务端保存耗时：</strong>{{ uploadResult.save_duration_ms }} ms</p>
           <el-button 
             type="primary" 
             size="small" 
@@ -138,7 +139,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import axios from 'axios'
+import { DEFAULT_UPLOAD_TIMEOUT, uploadRequest } from '@/api/upload'
 
 const router = useRouter()
 
@@ -157,7 +158,19 @@ const uploadStatusText = ref('')
 const uploadResult = ref(null)
 
 // 取消令牌
-let cancelSource = null
+let abortController = null
+let uploadStartedAt = 0
+
+const formatUploadSpeed = (bytesPerSecond) => {
+  if (!bytesPerSecond || bytesPerSecond <= 0) return ''
+  if (bytesPerSecond >= 1024 * 1024) {
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
+  }
+  if (bytesPerSecond >= 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`
+  }
+  return `${Math.round(bytesPerSecond)} B/s`
+}
 
 // 处理文件选择
 const handleFileChange = (file) => {
@@ -202,8 +215,9 @@ const handleUpload = async () => {
   uploadStatusText.value = '准备上传...'
   uploadResult.value = null
   
-  // 创建取消令牌
-  cancelSource = axios.CancelToken.source()
+  // 创建取消控制器
+  abortController = new AbortController()
+  uploadStartedAt = Date.now()
   
   try {
     // 创建 FormData
@@ -216,37 +230,37 @@ const handleUpload = async () => {
     uploadProgress.value = 0
     
     // 调用 API（使用原生 axios 以支持进度监控）
-    const response = await axios.post(
-      `${import.meta.env.VITE_API_BASE_URL}/admin/video/upload`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        timeout: 300000,  // 5分钟超时
-        cancelToken: cancelSource.token,
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-            uploadProgress.value = percentCompleted
-            uploadStatusText.value = `正在上传视频... ${percentCompleted}%`
-          }
+    const response = await uploadRequest({
+      url: '/admin/video/upload',
+      method: 'post',
+      data: formData,
+      timeout: DEFAULT_UPLOAD_TIMEOUT,
+      signal: abortController.signal,
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1)
+          const speed = formatUploadSpeed(progressEvent.loaded / elapsedSeconds)
+          uploadProgress.value = percentCompleted
+          uploadStatusText.value = speed
+            ? `正在上传视频... ${percentCompleted}% (${speed})`
+            : `正在上传视频... ${percentCompleted}%`
         }
       }
-    )
+    })
     
     uploadProgress.value = 100
     uploadStatus.value = 'success'
-    uploadStatusText.value = '上传成功！AI 正在分析中...'
+    uploadStatusText.value = '上传完成，后台正在进行 AI 分析...'
     
     uploadResult.value = {
       success: true,
-      message: response.data.message,
-      training_id: response.data.training_id,
-      username: response.data.username,
-      file_name: response.data.file_name,
-      status: response.data.status
+      message: response.message,
+      training_id: response.training_id,
+      username: response.username,
+      file_name: response.file_name,
+      status: response.status,
+      save_duration_ms: response.save_duration_ms
     }
     
     ElMessage.success('视频上传成功，AI 正在分析中...')
@@ -256,7 +270,7 @@ const handleUpload = async () => {
     
   } catch (error) {
     // 如果是取消操作，不显示错误
-    if (axios.isCancel(error)) {
+    if (error.code === 'ERR_CANCELED') {
       console.log('上传已取消')
       uploadStatusText.value = '上传已取消'
       uploadStatus.value = 'warning'
@@ -276,7 +290,7 @@ const handleUpload = async () => {
     }
   } finally {
     uploading.value = false
-    cancelSource = null
+    abortController = null
   }
 }
 
@@ -298,8 +312,8 @@ const handleCancel = async () => {
     )
     
     // 取消上传
-    if (cancelSource) {
-      cancelSource.cancel('用户取消上传')
+    if (abortController) {
+      abortController.abort()
     }
     
     uploadStatusText.value = '正在取消...'
@@ -307,14 +321,10 @@ const handleCancel = async () => {
     // 如果已经有 training_id，通知后端删除
     if (uploadResult.value?.training_id) {
       try {
-        await axios.delete(
-          `${import.meta.env.VITE_API_BASE_URL}/admin/video/upload/${uploadResult.value.training_id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          }
-        )
+        await uploadRequest({
+          url: `/admin/video/upload/${uploadResult.value.training_id}`,
+          method: 'delete'
+        })
         console.log('已通知后端删除训练记录')
       } catch (deleteError) {
         console.error('删除训练记录失败:', deleteError)
@@ -325,7 +335,7 @@ const handleCancel = async () => {
     uploading.value = false
     uploadStatus.value = 'warning'
     uploadStatusText.value = '上传已取消'
-    cancelSource = null
+    abortController = null
     
     ElMessage.success('已取消上传')
     

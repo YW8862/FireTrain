@@ -86,6 +86,8 @@ async def get_current_user(
         "email": user.email,
         "phone": user.phone,
         "role": user.role,
+        "can_switch_role": user.can_switch_role,
+        "original_role": user.original_role,
         "is_active": user.is_active,
         "last_login_at": user.last_login_at,
         "created_at": user.created_at,
@@ -113,6 +115,21 @@ async def register(user_data: UserRegisterRequest, db: AsyncSession = Depends(ge
         return RegisterResponse(
             message="注册成功",
             user_id=new_user.id
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
         )
     except ValueError as e:
         raise HTTPException(
@@ -149,6 +166,8 @@ async def login(
                 email=user.email,
                 phone=user.phone,
                 role=user.role,
+                can_switch_role=user.can_switch_role,
+                original_role=user.original_role,
                 is_active=user.is_active,
                 last_login_at=user.last_login_at,
                 created_at=user.created_at
@@ -177,6 +196,8 @@ async def get_profile(current_user: Annotated[dict, Depends(get_current_user)]):
         email=current_user["email"],
         phone=current_user.get("phone"),
         role=current_user.get("role", "student"),
+        can_switch_role=current_user.get("can_switch_role", False),
+        original_role=current_user.get("original_role"),
         is_active=current_user.get("is_active", True),
         last_login_at=current_user.get("last_login_at"),
         created_at=current_user.get("created_at", datetime.utcnow())
@@ -217,6 +238,8 @@ async def update_profile(
             email=updated_user.email,
             phone=updated_user.phone,
             role=updated_user.role,
+            can_switch_role=updated_user.can_switch_role,
+            original_role=updated_user.original_role,
             is_active=updated_user.is_active,
             last_login_at=updated_user.last_login_at,
             created_at=updated_user.created_at
@@ -258,7 +281,7 @@ async def switch_role(
     """
     切换用户角色（仅管理员可临时切换为普通用户）
     
-    - **target_role**: 目标角色 ("user" 或 "admin")
+    - **target_role**: 目标角色 ("student" 或 "admin"，兼容旧值 "user")
     - 返回新的 Token，其中包含切换后的角色
     """
     from app.services.user_service import create_access_token
@@ -270,10 +293,10 @@ async def switch_role(
     
     try:
         result = await user_service.switch_role(
-            current_user["id"], 
+            current_user["id"],
             role_data.target_role
         )
-        
+
         # 生成新的 Token，包含切换后的角色
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         new_token = create_access_token(
@@ -284,11 +307,16 @@ async def switch_role(
             },
             expires_delta=access_token_expires
         )
-        
+
         # 返回结果，包含新 Token
         response = RoleSwitchResponse(**result)
         response.token = new_token  # type: ignore
         return response
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

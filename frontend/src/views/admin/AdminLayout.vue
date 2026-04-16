@@ -17,7 +17,7 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="switch-to-user">
+              <el-dropdown-item v-if="canSwitchToUser" command="switch-to-user">
                 <el-icon><User /></el-icon>
                 切换到用户模式
               </el-dropdown-item>
@@ -84,7 +84,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -99,12 +99,26 @@ const activeMenu = computed(() => route.path)
 
 // 是否为用户模式（基于有效角色）
 const isUserMode = computed(() => userStore.effectiveRole === 'user')
+const canSwitchToUser = computed(() => userStore.canSwitchRole && !isUserMode.value)
+
+onMounted(async () => {
+  if (userStore.token && !userStore.userInfo) {
+    console.log('🔄 AdminLayout: userInfo 为空，开始补拉用户信息')
+    try {
+      await userStore.fetchUserInfo()
+      console.log('✅ AdminLayout: 用户信息已加载', userStore.userInfo)
+    } catch (error) {
+      console.error('❌ AdminLayout: 获取用户信息失败', error)
+    }
+  }
+})
 
 // 获取角色标签类型
 const getRoleType = (role) => {
   const roleMap = {
     'root': 'danger',
     'admin': 'warning',
+    'student': 'info',
     'user': 'info'
   }
   return roleMap[role] || 'info'
@@ -115,6 +129,7 @@ const getRoleLabel = (role) => {
   const labelMap = {
     'root': 'Root',
     'admin': '管理员',
+    'student': '普通用户',
     'user': '普通用户'
   }
   return labelMap[role] || role
@@ -122,6 +137,7 @@ const getRoleLabel = (role) => {
 
 // 下拉菜单命令处理
 const handleCommand = async (command) => {
+  console.log('🧭 AdminLayout handleCommand:', command)
   switch (command) {
     case 'switch-to-user':
       await handleSwitchRole()
@@ -138,13 +154,24 @@ const handleCommand = async (command) => {
 // 切换到用户模式（不修改数据库，只改变视图）
 const handleSwitchRole = async () => {
   try {
-    // 使用纯前端切换，不调用后端API
+    if (!userStore.userInfo && userStore.token) {
+      console.log('🔄 切换前先补拉用户信息')
+      await userStore.fetchUserInfo()
+    }
+
+    console.log('🎭 当前用户信息:', userStore.userInfo)
+    console.log('🎭 当前有效角色:', userStore.effectiveRole)
+    console.log('🎭 是否可切换:', userStore.canSwitchRole)
+
+    // 使用纯前端切换，不调用后端 API，也不修改数据库角色字段
     const success = userStore.switchViewRole('user')
     
     if (success) {
+      console.log('✅ 已切换到用户模式，准备跳转首页')
       ElMessage.success('已切换到用户模式')
       router.push('/')
     } else {
+      console.warn('⚠️ 当前账号不满足切换到用户模式的条件')
       ElMessage.error('您没有权限切换角色')
     }
   } catch (error) {

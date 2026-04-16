@@ -14,9 +14,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run --coverage"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
     "@vitejs/plugin-vue": "^6.0.4",
     "eslint": "^10.0.3",
     "eslint-plugin-vue": "^10.8.0",

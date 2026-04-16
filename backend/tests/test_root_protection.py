@@ -1,9 +1,11 @@
 """Root 用户保护测试"""
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from app.main import app
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import async_session_maker, engine
+from app.models.user import User
 import asyncio
 import uuid
 
@@ -22,21 +24,30 @@ def setup_database():
     asyncio.run(engine.dispose())
 
 
-def create_test_user(role="user"):
+def create_test_user(role="student"):
     """创建测试用户并返回 token 和 user_id"""
     unique_id = str(uuid.uuid4())[:8]
     username = f"test_{role}_{unique_id}"
     email = f"{username}@example.com"
 
-    client.post(
+    response = client.post(
         "/api/user/register",
         json={
             "username": username,
             "email": email,
-            "password": "test123456",
-            "role": role
+            "password": "test123456"
         }
     )
+    assert response.status_code in (200, 201)
+
+    async def _promote_role():
+        async with async_session_maker() as session:
+            result = await session.execute(select(User).where(User.username == username))
+            user = result.scalar_one()
+            user.role = role
+            await session.commit()
+
+    asyncio.run(_promote_role())
 
     login_response = client.post(
         "/api/user/login",

@@ -103,11 +103,12 @@ class TrainingRepository:
         query = query.order_by(TrainingRecord.created_at.desc())
         
         # 获取总数
-        count_query = select(TrainingRecord).where(TrainingRecord.user_id == user_id)
+        from sqlalchemy import func
+        count_query = select(func.count(TrainingRecord.id)).where(TrainingRecord.user_id == user_id)
         if conditions:
             count_query = count_query.where(and_(*conditions))
         total_result = await self.session.execute(count_query)
-        total = len(total_result.scalars().all())
+        total = total_result.scalar() or 0
         
         # 分页
         offset = (page - 1) * page_size
@@ -141,8 +142,23 @@ class TrainingRepository:
         """
         from sqlalchemy import select, func
         from datetime import datetime
+        from app.models.user import User
         
-        query = select(TrainingRecord)
+        query = (
+            select(
+                TrainingRecord.id,
+                TrainingRecord.user_id,
+                User.username,
+                TrainingRecord.training_type,
+                TrainingRecord.total_score,
+                TrainingRecord.status,
+                TrainingRecord.duration_seconds,
+                TrainingRecord.created_at,
+                TrainingRecord.completed_at,
+            )
+            .select_from(TrainingRecord)
+            .outerjoin(User, User.id == TrainingRecord.user_id)
+        )
         count_query = select(func.count(TrainingRecord.id))
         
         # 用户ID过滤
@@ -183,31 +199,22 @@ class TrainingRepository:
         )
         
         result = await self.session.execute(query)
-        trainings = result.scalars().all()
+        trainings = result.mappings().all()
         
-        # 转换为字典（不访问关系属性，避免异步问题）
-        training_list = []
-        for training in trainings:
-            # 单独查询用户名
-            from sqlalchemy import select
-            from app.models.user import User
-            user_result = await self.session.execute(
-                select(User.username).where(User.id == training.user_id)
-            )
-            username = user_result.scalar_one_or_none()
-            
-            training_list.append({
-                "id": training.id,
-                "user_id": training.user_id,
-                "username": username,
-                "training_type": training.training_type,
-                "score": float(training.total_score) if training.total_score else None,
-                "status": training.status,
-                "duration": float(training.duration_seconds) if training.duration_seconds else None,
-                "feedback": training.feedback,
-                "created_at": training.created_at,
-                "completed_at": training.completed_at
-            })
+        training_list = [
+            {
+                "id": training["id"],
+                "user_id": training["user_id"],
+                "username": training["username"],
+                "training_type": training["training_type"],
+                "score": float(training["total_score"]) if training["total_score"] else None,
+                "status": training["status"],
+                "duration": float(training["duration_seconds"]) if training["duration_seconds"] else None,
+                "created_at": training["created_at"],
+                "completed_at": training["completed_at"],
+            }
+            for training in trainings
+        ]
         
         return training_list, total
     

@@ -10,6 +10,9 @@ from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRegisterRequest, UserUpdateRequest
 
+STANDARD_USER_ROLE = "student"
+LEGACY_USER_ROLE = "user"
+
 
 def get_password_hash(password: str) -> str:
     """
@@ -21,10 +24,9 @@ def get_password_hash(password: str) -> str:
     Returns:
         哈希后的密码
     """
-    # 使用bcrypt进行密码哈希
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    return pwd_context.hash(password)
+    import bcrypt
+
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -39,9 +41,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         密码是否匹配
     """
     try:
-        from passlib.context import CryptContext
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        return pwd_context.verify(plain_password, hashed_password)
+        import bcrypt
+
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8")
+        )
     except Exception:
         return False
 
@@ -105,7 +110,7 @@ class UserService:
             email=user_data.email,
             password_hash=hashed_password,
             phone=user_data.phone,
-            role="user",  # 默认角色为普通用户
+            role=STANDARD_USER_ROLE,  # 默认角色为普通用户
             is_active=True
         )
         
@@ -202,27 +207,34 @@ class UserService:
         
         # 验证是否允许切换
         if not user.can_switch_role:
-            raise ValueError("该用户没有权限切换角色")
+            raise PermissionError("该用户没有权限切换角色")
         
-        # 仅允许在 user 和 admin/root 之间切换
-        if target_role not in ["user", "admin", "root"]:
+        normalized_target_role = (
+            STANDARD_USER_ROLE if target_role == LEGACY_USER_ROLE else target_role
+        )
+
+        # 仅允许在普通用户和 admin/root 之间切换
+        if normalized_target_role not in [STANDARD_USER_ROLE, "admin", "root"]:
             raise ValueError("不支持的角色切换")
         
-        # 如果是切换到 user 角色
-        if target_role == "user":
-            # 保存原始角色
-            user.original_role = user.role
-            user.role = "user"
+        # 如果是切换到普通用户角色
+        if normalized_target_role == STANDARD_USER_ROLE:
+            # 从 admin/root 切换到普通用户时记录原始角色
+            if user.role in ["admin", "root"]:
+                user.original_role = user.role
+            user.role = STANDARD_USER_ROLE
         else:
             # 如果是切换回 admin 或 root
-            # 检查当前是否是 user 角色且有原始角色
-            if user.role == "user" and user.original_role:
+            # 检查当前是否是普通用户角色且有原始角色
+            if user.role in [STANDARD_USER_ROLE, LEGACY_USER_ROLE] and user.original_role:
                 # 恢复原始角色
                 user.role = user.original_role
                 user.original_role = None
+            elif user.role in [STANDARD_USER_ROLE, LEGACY_USER_ROLE]:
+                raise PermissionError("普通用户无法直接切换到管理员角色")
             else:
                 # 直接设置为目标角色
-                user.role = target_role
+                user.role = normalized_target_role
         
         await self.user_repo.update(user, {})
         

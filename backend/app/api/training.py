@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Dict, List, Optional
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.repositories.training_repository import TrainingRepository
 from app.services.training_service import TrainingService
+from app.services.upload_service import save_upload_file
 from app.core.security import get_current_user_id
 from app.core.config import settings
 from app.schemas.training import (
@@ -185,9 +187,11 @@ async def precheck_training(
         )
         
         # 使用 analyze_video 分析完整视频，但只检查基本指标
-        analysis_result = inference_service.analyze_video(
-            video_path=training.video_path,
-            training_type=training.training_type
+        analysis_result = await run_in_threadpool(
+            lambda: inference_service.analyze_video(
+                video_path=training.video_path,
+                training_type=training.training_type
+            )
         )
         
         # 简单验证：是否检测到任何目标
@@ -244,31 +248,22 @@ async def upload_video_file(
             detail="无权操作此训练记录"
         )
     
-    # 保存文件
-    video_dir = "../data/videos"
-    os.makedirs(video_dir, exist_ok=True)
-    
-    # 生成唯一文件名
-    import uuid
-    file_extension = file.filename.split(".")[-1] if "." in file.filename else "mp4"
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    file_path = os.path.join(video_dir, unique_filename)
-    
     try:
-        # 读取并保存文件
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
+        saved_file = await save_upload_file(
+            file,
+            "../data/videos",
+        )
         
         # 更新训练记录
-        updated_training = await training_service.upload_video(training_id, file_path)
+        updated_training = await training_service.upload_video(training_id, saved_file.file_path)
         
         return {
             "message": "视频上传成功",
             "training_id": training_id,
             "status": updated_training.status,
-            "video_path": file_path,
-            "file_size": len(content)
+            "video_path": saved_file.file_path,
+            "file_size": saved_file.file_size,
+            "save_duration_ms": saved_file.save_duration_ms
         }
     except Exception as e:
         raise HTTPException(

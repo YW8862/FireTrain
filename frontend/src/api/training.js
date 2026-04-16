@@ -1,4 +1,5 @@
 import request from './request'
+import { DEFAULT_UPLOAD_TIMEOUT, uploadRequest } from './upload'
 
 /**
  * 开始训练
@@ -24,17 +25,17 @@ export function preCheckTraining(trainingId) {
 /**
  * 上传训练视频（文件方式）
  */
-export function uploadVideoFile(trainingId, videoBlob) {
+export function uploadVideoFile(trainingId, videoBlob, options = {}) {
   const formData = new FormData()
   formData.append('file', videoBlob, `training_${trainingId}_${Date.now()}.webm`)
   
-  return request({
+  return uploadRequest({
     url: `/training/upload-file/${trainingId}`,
     method: 'post',
     data: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    timeout: options.timeout || DEFAULT_UPLOAD_TIMEOUT,
+    onUploadProgress: options.onUploadProgress,
+    signal: options.signal
   })
 }
 

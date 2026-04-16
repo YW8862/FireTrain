@@ -73,6 +73,18 @@ const routes = [
         meta: { title: '用户管理' }
       },
       {
+        path: 'users/new',
+        name: 'AdminUserCreate',
+        component: () => import('@/views/admin/UserDetailView.vue'),
+        meta: { title: '新增用户' }
+      },
+      {
+        path: 'users/:id',
+        name: 'AdminUserDetail',
+        component: () => import('@/views/admin/UserDetailView.vue'),
+        meta: { title: '用户详情' }
+      },
+      {
         path: 'trainings',
         name: 'AdminTrainings',
         component: () => import('@/views/admin/TrainingManagement.vue'),
@@ -138,10 +150,9 @@ router.beforeEach((to, _from) => {
     try {
       const userStore = useUserStore()
       
-      // 如果 userStore 已初始化，使用 effectiveRole
-      let userRole
-      if (userStore.userInfo) {
-        userRole = userStore.effectiveRole
+      // 优先使用前端视图角色，确保“不改数据库字段”的身份切换在刷新后仍生效。
+      let userRole = userStore.effectiveRole
+      if (userRole) {
         console.log('🎭 使用 store 中的有效角色:', userRole)
       } else {
         // 否则从 token 中解析（fallback）

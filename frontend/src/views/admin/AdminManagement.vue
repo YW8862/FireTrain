@@ -68,15 +68,21 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="200">
+        <el-table-column label="操作" fixed="right" width="360">
           <template #default="{ row }">
+            <el-button type="success" size="small" @click="showEditDialog(row)">
+              详情/编辑
+            </el-button>
+            <el-button type="warning" size="small" @click="handleResetPassword(row)">
+              重置密码
+            </el-button>
             <el-dropdown @command="(cmd) => handleRoleChange(row, cmd)">
               <el-button type="primary" size="small">
                 修改角色 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="user" :disabled="row.role === 'user'">
+                  <el-dropdown-item command="student" :disabled="['student', 'user'].includes(row.role)">
                     普通用户
                   </el-dropdown-item>
                   <el-dropdown-item command="admin" :disabled="row.role === 'admin'">
@@ -171,6 +177,71 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="editDialogVisible"
+      title="管理员详情/编辑"
+      width="560px"
+      @close="resetEditForm"
+    >
+      <el-form
+        ref="editFormRef"
+        :model="editForm"
+        :rules="editRules"
+        label-width="110px"
+      >
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="editForm.username" />
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="editForm.email" />
+        </el-form-item>
+        <el-form-item label="手机号">
+          <el-input v-model="editForm.phone" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-tag :type="getRoleType(editForm.role)">{{ getRoleLabel(editForm.role) }}</el-tag>
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-switch v-model="editForm.is_active" />
+        </el-form-item>
+        <el-form-item label="允许切换角色">
+          <el-switch v-model="editForm.can_switch_role" />
+        </el-form-item>
+        <el-form-item label="原始角色">
+          <el-select
+            v-model="editForm.original_role"
+            clearable
+            :disabled="!editForm.can_switch_role"
+            style="width: 100%"
+          >
+            <el-option label="管理员" value="admin" />
+            <el-option label="Root" value="root" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input
+            v-model="editForm.password"
+            type="password"
+            placeholder="留空则不修改密码"
+            show-password
+          />
+        </el-form-item>
+        <el-form-item label="最后登录">
+          <span>{{ formatDate(editForm.last_login_at) }}</span>
+        </el-form-item>
+        <el-form-item label="创建时间">
+          <span>{{ formatDate(editForm.created_at) }}</span>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="updating" @click="handleUpdate">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -178,7 +249,15 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Plus, ArrowDown } from '@element-plus/icons-vue'
-import { getAdmins, createAdmin, deleteAdmin, updateAdminRole } from '@/api/admin'
+import {
+  createAdmin,
+  deleteAdmin,
+  getAdminDetail,
+  getAdmins,
+  resetAdminPassword,
+  updateAdmin,
+  updateAdminRole
+} from '@/api/admin'
 
 // 数据
 const loading = ref(false)
@@ -223,6 +302,34 @@ const createRules = {
   ]
 }
 
+const editDialogVisible = ref(false)
+const editFormRef = ref(null)
+const updating = ref(false)
+const editForm = reactive({
+  id: null,
+  username: '',
+  email: '',
+  phone: '',
+  role: '',
+  is_active: true,
+  can_switch_role: true,
+  original_role: null,
+  password: '',
+  last_login_at: null,
+  created_at: null
+})
+
+const editRules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' }
+  ],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
+  ]
+}
+
 // 方法
 const fetchAdmins = async () => {
   loading.value = true
@@ -234,8 +341,8 @@ const fetchAdmins = async () => {
     }
 
     const response = await getAdmins(params)
-    adminList.value = response.data.admins
-    pagination.total = response.data.total
+    adminList.value = response.admins
+    pagination.total = response.total
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '获取管理员列表失败')
   } finally {
@@ -267,6 +374,35 @@ const resetCreateForm = () => {
   createForm.can_switch_role = true
 }
 
+const resetEditForm = () => {
+  editFormRef.value?.resetFields()
+  editForm.id = null
+  editForm.username = ''
+  editForm.email = ''
+  editForm.phone = ''
+  editForm.role = ''
+  editForm.is_active = true
+  editForm.can_switch_role = true
+  editForm.original_role = null
+  editForm.password = ''
+  editForm.last_login_at = null
+  editForm.created_at = null
+}
+
+const applyAdminInfo = (admin) => {
+  editForm.id = admin.id
+  editForm.username = admin.username || ''
+  editForm.email = admin.email || ''
+  editForm.phone = admin.phone || ''
+  editForm.role = admin.role || ''
+  editForm.is_active = admin.is_active ?? true
+  editForm.can_switch_role = admin.can_switch_role ?? true
+  editForm.original_role = admin.original_role || null
+  editForm.password = ''
+  editForm.last_login_at = admin.last_login_at || null
+  editForm.created_at = admin.created_at || null
+}
+
 const handleCreate = async () => {
   const valid = await createFormRef.value?.validate()
   if (!valid) return
@@ -281,6 +417,41 @@ const handleCreate = async () => {
     ElMessage.error(error.response?.data?.detail || '创建管理员失败')
   } finally {
     creating.value = false
+  }
+}
+
+const showEditDialog = async (row) => {
+  try {
+    const detail = await getAdminDetail(row.id)
+    applyAdminInfo(detail)
+    editDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '获取管理员详情失败')
+  }
+}
+
+const handleUpdate = async () => {
+  const valid = await editFormRef.value?.validate()
+  if (!valid) return
+
+  updating.value = true
+  try {
+    await updateAdmin(editForm.id, {
+      username: editForm.username,
+      email: editForm.email,
+      phone: editForm.phone || null,
+      is_active: editForm.is_active,
+      can_switch_role: editForm.can_switch_role,
+      original_role: editForm.can_switch_role ? (editForm.original_role || null) : null,
+      password: editForm.password || undefined
+    })
+    ElMessage.success('管理员信息更新成功')
+    editDialogVisible.value = false
+    fetchAdmins()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '更新管理员失败')
+  } finally {
+    updating.value = false
   }
 }
 
@@ -316,10 +487,20 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleResetPassword = async (row) => {
+  try {
+    const response = await resetAdminPassword(row.id)
+    ElMessage.success(`已重置密码，临时密码：${response.temp_password}`)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '重置管理员密码失败')
+  }
+}
+
 const getRoleType = (role) => {
   const types = {
     root: 'danger',
     admin: 'primary',
+    student: 'info',
     user: 'info'
   }
   return types[role] || 'info'
@@ -329,6 +510,7 @@ const getRoleLabel = (role) => {
   const labels = {
     root: 'Root',
     admin: '管理员',
+    student: '普通用户',
     user: '普通用户'
   }
   return labels[role] || role

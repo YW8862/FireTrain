@@ -1,11 +1,7 @@
-"""统计相关的 API 路由"""
-from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import get_current_user_id
 from app.db.session import get_db
 from app.schemas.statistics import (
     PersonalStatisticsResponse,
@@ -28,31 +24,21 @@ def get_statistics_service(session: AsyncSession = Depends(get_db)) -> Statistic
 @router.get("/personal", response_model=PersonalStatisticsResponse)
 async def get_personal_statistics(
     stats_service: StatisticsService = Depends(get_statistics_service),
-    # TODO: 添加用户认证
-    current_user_id: int = 1  # 临时硬编码
+    current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取个人统计
     
     返回用户的总训练次数、平均分、最佳成绩等统计信息
     """
-    stats = await stats_service.get_personal_statistics(current_user_id)
-    
-    if not stats:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="未找到该用户的统计数据"
-        )
-    
-    return stats
+    return await stats_service.get_personal_statistics(current_user_id)
 
 
 @router.get("/trend", response_model=TrainingTrendResponse)
 async def get_training_trend(
     days: int = Query(7, ge=1, le=30, description="查询天数"),
     stats_service: StatisticsService = Depends(get_statistics_service),
-    # TODO: 添加用户认证
-    current_user_id: int = 1  # 临时硬编码
+    current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取训练趋势
@@ -72,8 +58,7 @@ async def get_training_trend(
 @router.get("/step-analysis", response_model=StepAnalysisResponse)
 async def get_step_analysis_api(
     stats_service: StatisticsService = Depends(get_statistics_service),
-    # TODO: 添加用户认证
-    current_user_id: int = 1  # 临时硬编码
+    current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取步骤分析
@@ -88,8 +73,7 @@ async def get_step_analysis_api(
 async def get_statistics_overview(
     days: int = Query(7, ge=1, le=30, description="趋势天数"),
     stats_service: StatisticsService = Depends(get_statistics_service),
-    # TODO: 添加用户认证
-    current_user_id: int = 1  # 临时硬编码
+    current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取统计概览
@@ -98,12 +82,6 @@ async def get_statistics_overview(
     适用于首页看板展示
     """
     personal_stats = await stats_service.get_personal_statistics(current_user_id)
-    if not personal_stats:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="未找到该用户的统计数据"
-        )
-    
     trend_data = await stats_service.get_training_trend(current_user_id, days=days)
     step_analysis = await stats_service.get_step_analysis(current_user_id)
     

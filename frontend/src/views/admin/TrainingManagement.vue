@@ -114,8 +114,8 @@
         :total="pagination.total"
         :page-sizes="[10, 20, 50, 100]"
         layout="total, sizes, prev, pager, next, jumper"
-        @current-change="fetchTrainings"
-        @size-change="fetchTrainings"
+        @current-change="handlePageChange"
+        @size-change="handlePageSizeChange"
         style="margin-top: 20px; justify-content: flex-end"
       />
     </el-card>
@@ -145,6 +145,7 @@ const pagination = reactive({
   pageSize: 20,
   total: 0
 })
+const skipNextCurrentChange = ref(false)
 
 // 获取训练记录列表
 const fetchTrainings = async () => {
@@ -188,6 +189,24 @@ const handleReset = () => {
   filterForm.status = ''
   filterForm.dateRange = []
   pagination.page = 1
+  fetchTrainings()
+}
+
+const handlePageChange = () => {
+  if (skipNextCurrentChange.value) {
+    skipNextCurrentChange.value = false
+    return
+  }
+
+  fetchTrainings()
+}
+
+const handlePageSizeChange = () => {
+  if (pagination.page !== 1) {
+    skipNextCurrentChange.value = true
+    pagination.page = 1
+  }
+
   fetchTrainings()
 }
 

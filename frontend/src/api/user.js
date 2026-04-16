@@ -67,7 +67,7 @@ export function logout() {
 /**
  * 切换角色（管理员 ↔ 普通用户）
  * @param {Object} data - 切换数据
- * @param {string} data.target_role - 目标角色 ('user' | 'admin')
+ * @param {string} data.target_role - 目标角色 ('student' | 'admin')，兼容旧值 'user'
  */
 export function switchRoleApi(data) {
   return request({

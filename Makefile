@@ -1,4 +1,22 @@
-.PHONY: help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-frontend run-local local-up local-down local-logs update-cert docker-up docker-down docker-logs docker-restart docker-status
+default: test
+
+CRITICAL_TESTS = \
+	tests/test_rule_engine.py \
+	tests/test_scoring.py \
+	tests/test_llm_scoring_service.py \
+	tests/test_permission.py \
+	tests/test_security.py \
+	tests/test_training_service_unit.py
+
+CRITICAL_COV_MODULES = \
+	--cov=app.ai.llm_scoring_service \
+	--cov=app.ai.rule_engine \
+	--cov=app.ai.feedback_generator \
+	--cov=app.core.security \
+	--cov=app.middleware.permission \
+	--cov=app.services.training_service
+
+.PHONY: default help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-backend-all test-critical test-frontend run-local local-up local-down local-logs update-cert docker-up docker-down docker-logs docker-restart docker-status
 
 help:
 	@echo "Available commands:"
@@ -8,7 +26,9 @@ help:
 	@echo "  make install-backend  - Install backend dependencies"
 	@echo "  make install-frontend - Install frontend dependencies"
 	@echo "  make lint        - Run backend and frontend linters"
-	@echo "  make test        - Run backend and frontend tests"
+	@echo "  make test        - Run the 6 critical backend module tests"
+	@echo "  make test-critical - Run the 6 critical backend module tests"
+	@echo "  make test-backend-all - Run the legacy full backend test suite"
 	@echo "  make run-local   - Placeholder local run command"
 	@echo "  make local-up    - Start services in background (local dev)"
 	@echo "  make local-down  - Stop all local services"
@@ -57,11 +77,16 @@ lint-frontend:
 	@cd frontend && npm run format:check
 
 test:
-	@$(MAKE) test-backend
-	@$(MAKE) test-frontend
+	@$(MAKE) test-critical
 
 test-backend:
-	@cd backend && . .venv/bin/activate && pytest
+	@$(MAKE) test-critical
+
+test-critical:
+	@cd backend && . .venv/bin/activate && pytest $(CRITICAL_TESTS) $(CRITICAL_COV_MODULES) --cov-report=term-missing
+
+test-backend-all:
+	@cd backend && . .venv/bin/activate && pytest --cov=app --cov-report=term-missing
 
 test-frontend:
 	@cd frontend && npm run test

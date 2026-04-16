@@ -143,6 +143,42 @@ const stats = reactive({
 // 步骤分析
 const stepAnalysis = ref([])
 
+const normalizeSuccessRate = (value) => {
+  const rate = Number(value || 0)
+  if (Number.isNaN(rate)) return 0
+  return rate > 1 ? rate / 100 : rate
+}
+
+const normalizeStepAnalysis = (items = []) => {
+  return items.map(item => ({
+    ...item,
+    training_count: item.training_count || 0,
+    suggestion: item.suggestion || item.improvement_suggestion || '继续保持规范操作',
+    success_rate: normalizeSuccessRate(item.success_rate),
+    average_score: parseFloat(item.average_score) || 0
+  }))
+}
+
+const resetPersonalStats = () => {
+  stats.total_training_count = 0
+  stats.average_score = 0
+  stats.best_score = 0
+  stats.last_training_date = null
+}
+
+const buildEmptyChartGraphic = (text) => ({
+  type: 'text',
+  left: 'center',
+  top: 'middle',
+  silent: true,
+  style: {
+    text,
+    fill: '#909399',
+    fontSize: 16,
+    fontWeight: 500
+  }
+})
+
 // 获取分数标签类型
 const getScoreTagType = (score) => {
   if (score >= 90) return 'success'
@@ -207,11 +243,12 @@ const loadData = async () => {
 const loadPersonalStats = async () => {
   try {
     const res = await getPersonalStatistics()
-    stats.total_training_count = res.total_training_count || 0
+    stats.total_training_count = res.total_training_count || res.total_trainings || 0
     stats.average_score = parseFloat(res.average_score) || 0
     stats.best_score = parseFloat(res.best_score) || 0
-    stats.last_training_date = res.last_training_date
+    stats.last_training_date = res.last_training_date || res.last_training_at || null
   } catch (error) {
+    resetPersonalStats()
     console.error('加载个人统计失败:', error)
   }
 }
@@ -230,9 +267,9 @@ const loadTrendData = async () => {
 const loadStepAnalysis = async () => {
   try {
     const res = await getStepAnalysis()
-    stepAnalysis.value = res.step_analysis || []
-    renderStepBarChart(res.step_analysis)
-    renderRadarChart(res.step_analysis)
+    stepAnalysis.value = normalizeStepAnalysis(res.step_analysis || [])
+    renderStepBarChart(stepAnalysis.value)
+    renderRadarChart(stepAnalysis.value)
   } catch (error) {
     console.error('加载步骤分析失败:', error)
   }
@@ -338,6 +375,25 @@ const renderStepBarChart = (data) => {
   if (!stepBarChart) {
     stepBarChart = echarts.init(stepBarChartRef.value)
   }
+
+  if (!data.length) {
+    stepBarChart.setOption({
+      title: {
+        text: '暂无步骤数据',
+        left: 'center',
+        top: 'center',
+        textStyle: {
+          color: '#909399',
+          fontSize: 16,
+          fontWeight: 500
+        }
+      },
+      xAxis: { show: false, type: 'category', data: [] },
+      yAxis: { show: false, type: 'value' },
+      series: []
+    }, true)
+    return
+  }
   
   const steps = data.map(item => item.step_name)
   const scores = data.map(item => parseFloat(item.average_score))
@@ -406,6 +462,19 @@ const renderRadarChart = (data) => {
   if (!radarChart) {
     radarChart = echarts.init(radarChartRef.value)
   }
+
+  if (!data.length) {
+    radarChart.setOption({
+      graphic: [buildEmptyChartGraphic('暂无步骤数据')],
+      radar: {
+        indicator: [{ name: '暂无数据', max: 100 }],
+        shape: 'circle',
+        splitNumber: 5
+      },
+      series: []
+    }, true)
+    return
+  }
   
   const indicator = data.map(item => ({
     name: item.step_name,
@@ -415,6 +484,7 @@ const renderRadarChart = (data) => {
   const values = data.map(item => parseFloat(item.average_score))
   
   const option = {
+    graphic: [],
     tooltip: {
       trigger: 'item',
       position: (point, params, dom, rect, size) => {

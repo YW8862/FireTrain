@@ -28,7 +28,7 @@ services:
       dockerfile: Dockerfile
     container_name: firetrain-backend
     working_dir: /app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --ssl-keyfile=/app/certs/key.pem --ssl-certfile=/app/certs/cert.pem
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
@@ -41,7 +41,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/videos:/app/data/videos
       - ./data/matplotlib_cache:/app/data/matplotlib_cache
-      - ./certs:/app/certs
     depends_on:
       mysql:
         condition: service_healthy
@@ -58,7 +57,8 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://localhost:8000/api}
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+      - VITE_UPLOAD_BASE_URL=${VITE_UPLOAD_BASE_URL:-}
     volumes:
       - ./frontend:/app
       - ./certs:/certs

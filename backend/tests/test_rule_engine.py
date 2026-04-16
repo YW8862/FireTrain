@@ -83,6 +83,32 @@ class TestRuleEngine:
         assert rule_engine._get_performance_level(85) == PerformanceLevel.GOOD
         assert rule_engine._get_performance_level(70) == PerformanceLevel.PASS
         assert rule_engine._get_performance_level(50) == PerformanceLevel.FAIL
+
+    def test_action_completeness_returns_zero_without_step_scores(self, rule_engine):
+        assert rule_engine._calculate_action_completeness({}) == Decimal("0")
+
+    def test_pose_standardization_returns_zero_without_step_scores(self, rule_engine):
+        assert rule_engine._calculate_pose_standardization({}) == Decimal("0")
+
+    def test_pose_standardization_returns_zero_when_all_weights_are_zero(self, rule_engine):
+        score = rule_engine._calculate_pose_standardization(
+            {"step_scores": {"step1": {"score": 88, "weight": 0}}}
+        )
+
+        assert score == Decimal("0")
+
+    def test_timeliness_returns_default_when_duration_missing(self, rule_engine):
+        assert rule_engine._calculate_timeliness(duration_seconds=None) == Decimal("50")
+
+    def test_helper_details_return_default_messages(self, rule_engine):
+        assert rule_engine._get_completeness_details({}) == {"message": "无动作检测数据"}
+        assert rule_engine._get_standardization_details({}) == {"message": "无姿态分析数据"}
+
+    def test_timeliness_details_for_unknown_training_type(self, rule_engine):
+        details = rule_engine._get_timeliness_details(Decimal("50"), "unknown")
+
+        assert details["standard_range"] == [90, 150]
+        assert details["is_within_range"] is False
     
     @pytest.mark.asyncio
     async def test_full_evaluation(self, rule_engine):
@@ -231,6 +257,96 @@ class TestFeedbackGenerator:
         
         assert isinstance(suggestions, list)
         assert len(suggestions) > 0
+
+    def test_problem_identification_detects_fast_and_angle_issue(self, feedback_generator):
+        evaluation_result = {
+            "dimension_scores": {
+                "timeliness": {"score": 60}
+            },
+            "details": {
+                "timeliness_details": {
+                    "actual_duration": 50.0,
+                    "standard_range": [90, 150]
+                }
+            }
+        }
+
+        problems = feedback_generator._identify_problems(
+            evaluation_result=evaluation_result,
+            action_logs=None,
+            pose_details={"average_angles": {"right_arm": 180.0}},
+        )
+
+        assert any(problem["type"] == "too_fast" for problem in problems)
+        assert any(problem["type"] == "angle_error" for problem in problems)
+
+    def test_suggestions_generation_handles_angle_error_template(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={},
+            problems=[
+                {
+                    "type": "angle_error",
+                    "angle_name": "right_arm",
+                    "angle_value": 180.0,
+                }
+            ],
+        )
+
+        assert suggestions == ["调整right_arm，标准角度为150-180°"]
+
+    def test_suggestions_generation_handles_time_error_template(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={},
+            problems=[{"type": "time_error"}],
+        )
+
+        assert suggestions == ["控制总用时在90-150秒范围内"]
+
+    def test_suggestions_generation_handles_generic_template(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={},
+            problems=[{"type": "incorrect"}],
+        )
+
+        assert suggestions == ["纠正【相关步骤】的操作手法"]
+
+    def test_suggestions_generation_falls_back_for_unknown_level(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={"performance_level": "未知"},
+            problems=[],
+        )
+
+        assert "重新学习标准操作流程" in suggestions
+
+    def test_suggestions_generation_falls_back_for_excellent_level(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={"performance_level": "优秀"},
+            problems=[],
+        )
+
+        assert suggestions == ["保持现有水平，定期复习操作流程", "可以尝试指导他人"]
+
+    def test_suggestions_generation_falls_back_for_good_level(self, feedback_generator):
+        suggestions = feedback_generator._generate_suggestions(
+            evaluation_result={"performance_level": "良好"},
+            problems=[],
+        )
+
+        assert suggestions == ["继续练习，争取达到优秀水平", "注意细节改进"]
+
+    def test_detailed_report_generation_without_problems(self, feedback_generator):
+        report = feedback_generator._generate_detailed_report(
+            evaluation_result={
+                "total_score": 95.0,
+                "performance_level": "优秀",
+                "dimension_scores": {},
+            },
+            problems=[],
+            suggestions=["保持现有水平"],
+        )
+
+        assert "存在的问题:" not in report
+        assert "改进建议:" in report
     
     def test_detailed_report_generation(self, feedback_generator):
         """测试详细报告生成"""

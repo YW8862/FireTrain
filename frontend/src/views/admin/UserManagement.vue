@@ -1,6 +1,11 @@
 <template>
   <div class="user-management">
-    <h2 class="page-title">👥 用户管理</h2>
+    <div class="page-header">
+      <h2 class="page-title">👥 用户管理</h2>
+      <el-button type="primary" @click="goToCreateUser">
+        新增用户
+      </el-button>
+    </div>
     
     <!-- 搜索和过滤 -->
     <el-card shadow="hover" class="filter-card">
@@ -12,14 +17,6 @@
             clearable
             style="width: 200px"
           />
-        </el-form-item>
-        
-        <el-form-item label="角色">
-          <el-select v-model="filterForm.role" placeholder="全部" clearable style="width: 120px">
-            <el-option label="普通用户" value="user" />
-            <el-option label="管理员" value="admin" />
-            <el-option label="Root" value="root" />
-          </el-select>
         </el-form-item>
         
         <el-form-item>
@@ -68,8 +65,15 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="200">
+        <el-table-column label="操作" fixed="right" width="260">
           <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              @click="goToDetail(row.id)"
+            >
+              详情/编辑
+            </el-button>
             <el-button
               type="warning"
               size="small"
@@ -107,19 +111,21 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { Search } from '@element-plus/icons-vue'
 import { getUsers, deleteUser, resetUserPassword } from '@/api/admin'
 import { useUserStore } from '@/store/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const userStore = useUserStore()
+const router = useRouter()
 const currentUserId = computed(() => userStore.userInfo?.id)
 
 const userList = ref([])
 const loading = ref(false)
 
 const filterForm = reactive({
-  keyword: '',
-  role: ''
+  keyword: ''
 })
 
 const pagination = reactive({
@@ -135,8 +141,7 @@ const fetchUsers = async () => {
     const response = await getUsers({
       page: pagination.page,
       page_size: pagination.pageSize,
-      keyword: filterForm.keyword || undefined,
-      role: filterForm.role || undefined
+      keyword: filterForm.keyword || undefined
     })
     
     userList.value = response.users
@@ -157,9 +162,16 @@ const handleSearch = () => {
 // 重置
 const handleReset = () => {
   filterForm.keyword = ''
-  filterForm.role = ''
   pagination.page = 1
   fetchUsers()
+}
+
+const goToCreateUser = () => {
+  router.push('/admin/users/new')
+}
+
+const goToDetail = (userId) => {
+  router.push(`/admin/users/${userId}`)
 }
 
 // 删除用户
@@ -208,6 +220,7 @@ const getRoleType = (role) => {
   const roleMap = {
     'root': 'danger',
     'admin': 'warning',
+    'student': 'info',
     'user': 'info'
   }
   return roleMap[role] || 'info'
@@ -218,6 +231,7 @@ const getRoleLabel = (role) => {
   const labelMap = {
     'root': 'Root',
     'admin': '管理员',
+    'student': '普通用户',
     'user': '普通用户'
   }
   return labelMap[role] || role
@@ -241,11 +255,17 @@ onMounted(() => {
 }
 
 .page-title {
-  margin-bottom: 20px;
   color: #303133;
 }
 
 .filter-card {
   margin-bottom: 20px;
+}
+
+.page-header {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 </style>

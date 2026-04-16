@@ -10,6 +10,7 @@ import os
 import uuid
 from typing import Optional
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,7 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.training_repository import TrainingRepository
 from app.core.config import settings
 from app.services.training_service import TrainingService
+from app.services.upload_service import save_upload_file
 from app.schemas.admin_video import AdminVideoUploadResponse
 from app.models.training_record import TrainingRecord
 
@@ -68,18 +70,16 @@ async def admin_upload_video(
         )
     
     # 3. 保存视频文件
-    video_dir = "../data/videos/admin_uploads"
-    os.makedirs(video_dir, exist_ok=True)
-    
     unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(video_dir, unique_filename)
     
     try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
+        saved_file = await save_upload_file(
+            file,
+            "../data/videos/admin_uploads",
+            filename=unique_filename,
+        )
         
-        print(f"✅ 视频文件已保存: {file_path}")
+        print(f"✅ 视频文件已保存: {saved_file.file_path}")
         
     except Exception as e:
         raise HTTPException(
@@ -101,7 +101,7 @@ async def admin_upload_video(
         "training_type": training_type,
         "status": "processing",
         "total_score": Decimal("0.00"),
-        "video_path": file_path,
+        "video_path": saved_file.file_path,
         "started_at": datetime.utcnow(),
     }
     
@@ -120,7 +120,8 @@ async def admin_upload_video(
         training_id=training.id,
         username=username,
         file_name=file.filename,
-        status="processing"
+        status="processing",
+        save_duration_ms=saved_file.save_duration_ms,
     )
 
 
@@ -209,9 +210,11 @@ async def process_admin_video_analysis(training_id: int):
             )
             
             # 分析视频
-            analysis_result = inference_service.analyze_video(
-                video_path=training.video_path,
-                training_type=training.training_type
+            analysis_result = await run_in_threadpool(
+                lambda: inference_service.analyze_video(
+                    video_path=training.video_path,
+                    training_type=training.training_type
+                )
             )
             
             print(f"✅ AI 分析完成，检测到 {analysis_result.get('total_detections', 0)} 个目标")

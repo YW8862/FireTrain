@@ -53,6 +53,25 @@ class AdminLogService:
         await self.session.refresh(log)
         
         return log
+
+    async def log_action(
+        self,
+        admin_id: int,
+        action: str,
+        target_type: str,
+        target_id: Optional[int] = None,
+        details: Optional[Dict] = None,
+        ip_address: Optional[str] = None
+    ) -> AdminLog:
+        """兼容旧调用方的日志写入别名。"""
+        return await self.create_log(
+            admin_id=admin_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=details,
+            ip_address=ip_address,
+        )
     
     async def get_admin_logs(
         self,
@@ -139,3 +158,29 @@ class AdminLogService:
             })
         
         return log_list, total
+
+    async def get_all_logs(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        action_filter: Optional[str] = None
+    ) -> tuple[List[AdminLog], int]:
+        """兼容旧调用方的日志查询别名。"""
+        logs, total = await self.get_admin_logs(
+            page=page,
+            page_size=page_size,
+            action=action_filter,
+        )
+        admin_logs = []
+        for log in logs:
+            admin_logs.append(AdminLog(
+                id=log["id"],
+                admin_id=log["admin_id"],
+                action=log["action"],
+                target_type=log["target_type"],
+                target_id=log["target_id"],
+                details=log["details"],
+                ip_address=log["ip_address"],
+                created_at=log["created_at"],
+            ))
+        return admin_logs, total

@@ -16,6 +16,45 @@ export function getUsers(params) {
   })
 }
 
+export function createUser(data) {
+  return request({
+    url: '/admin/users',
+    method: 'post',
+    data
+  })
+}
+
+export function getUserDetail(userId) {
+  return request({
+    url: `/admin/users/${userId}`,
+    method: 'get'
+  })
+}
+
+export function updateUser(userId, data) {
+  return request({
+    url: `/admin/users/${userId}`,
+    method: 'put',
+    data
+  })
+}
+
+export function getUserStatistics(userId, params) {
+  return request({
+    url: `/admin/users/${userId}/stats/overview`,
+    method: 'get',
+    params
+  })
+}
+
+export function getUserTrainings(userId, params) {
+  return request({
+    url: `/admin/users/${userId}/trainings`,
+    method: 'get',
+    params
+  })
+}
+
 /**
  * 删除用户
  * @param {number} userId - 用户ID
@@ -98,6 +137,13 @@ export function getAdmins(params) {
   })
 }
 
+export function getAdminDetail(adminId) {
+  return request({
+    url: `/admin/admins/${adminId}`,
+    method: 'get'
+  })
+}
+
 /**
  * 创建管理员
  * @param {Object} data - 管理员数据
@@ -122,6 +168,21 @@ export function deleteAdmin(adminId) {
   return request({
     url: `/admin/admins/${adminId}`,
     method: 'delete'
+  })
+}
+
+export function updateAdmin(adminId, data) {
+  return request({
+    url: `/admin/admins/${adminId}`,
+    method: 'put',
+    data
+  })
+}
+
+export function resetAdminPassword(adminId) {
+  return request({
+    url: `/admin/admins/${adminId}/reset-password`,
+    method: 'put'
   })
 }
 

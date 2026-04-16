@@ -152,6 +152,16 @@
                   新的训练
                 </el-button>
               </div>
+
+              <div v-if="uploadState.visible" class="upload-status-box">
+                <el-progress
+                  :percentage="uploadState.percentage"
+                  :status="uploadState.status"
+                  :indeterminate="uploadState.indeterminate"
+                  :duration="2"
+                />
+                <p>{{ uploadState.text }}</p>
+              </div>
             </el-card>
           </el-col>
 
@@ -193,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoCamera, Document, Timer, Clock, VideoPlay, VideoPause } from '@element-plus/icons-vue'
@@ -216,6 +226,14 @@ let recordedChunks = []    // 录制的视频片段
 let countdownTimer = null
 const realtimeFeedback = ref('')
 const isPaused = ref(false) // 暂停状态
+const uploadState = reactive({
+  visible: false,
+  percentage: 0,
+  status: '',
+  text: '',
+  indeterminate: false
+})
+let uploadAbortController = null
 
 // 训练表单
 const trainingForm = reactive({
@@ -235,6 +253,39 @@ const steps = reactive([
   { name: '瞄准火源', status: 'pending' },
   { name: '压把手', status: 'pending' }
 ])
+
+const formatUploadSpeed = (bytesPerSecond) => {
+  if (!bytesPerSecond || bytesPerSecond <= 0) return ''
+  if (bytesPerSecond >= 1024 * 1024) {
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
+  }
+  if (bytesPerSecond >= 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`
+  }
+  return `${Math.round(bytesPerSecond)} B/s`
+}
+
+const updateUploadState = ({
+  visible = true,
+  percentage = uploadState.percentage,
+  status = uploadState.status,
+  text = uploadState.text,
+  indeterminate = uploadState.indeterminate
+}) => {
+  uploadState.visible = visible
+  uploadState.percentage = percentage
+  uploadState.status = status
+  uploadState.text = text
+  uploadState.indeterminate = indeterminate
+}
+
+const resetUploadState = () => {
+  uploadState.visible = false
+  uploadState.percentage = 0
+  uploadState.status = ''
+  uploadState.text = ''
+  uploadState.indeterminate = false
+}
 
 // 开启摄像头并开始录制
 const startCamera = async () => {
@@ -397,28 +448,84 @@ const handleCompleteTraining = async () => {
     
     // 1. 停止录制
     ElMessage.info('正在保存视频...')
+    updateUploadState({
+      percentage: 0,
+      status: '',
+      text: '正在整理录制视频...',
+      indeterminate: true
+    })
     const videoBlob = await stopRecording()
     
     // 2. 如果有视频，先上传视频
     if (videoBlob && videoBlob.size > 0) {
       ElMessage.info('正在上传视频...')
       try {
-        const { uploadVideoFile } = await import('@/api/training')
-        await uploadVideoFile(currentTraining.value.training_id, videoBlob)
+        const uploadStartedAt = Date.now()
+        uploadAbortController = new AbortController()
+        updateUploadState({
+          percentage: 0,
+          status: '',
+          text: '正在上传视频...',
+          indeterminate: false
+        })
+        await uploadVideoFile(currentTraining.value.training_id, videoBlob, {
+          signal: uploadAbortController.signal,
+          onUploadProgress: (progressEvent) => {
+            if (!progressEvent.total) return
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1)
+            const speed = formatUploadSpeed(progressEvent.loaded / elapsedSeconds)
+            updateUploadState({
+              percentage: percentCompleted,
+              status: '',
+              text: speed
+                ? `正在上传视频... ${percentCompleted}% (${speed})`
+                : `正在上传视频... ${percentCompleted}%`,
+              indeterminate: false
+            })
+          }
+        })
+        uploadAbortController = null
+        updateUploadState({
+          percentage: 100,
+          status: 'success',
+          text: '视频上传完成，正在进行 AI 快速检测...',
+          indeterminate: false
+        })
         console.log('视频上传成功')
       } catch (uploadError) {
         console.error('视频上传失败:', uploadError)
+        updateUploadState({
+          percentage: 100,
+          status: 'exception',
+          text: uploadError.customMessage || '视频上传失败，将继续尝试完成训练',
+          indeterminate: false
+        })
         // 上传失败也继续，使用模拟评分
         ElMessage.warning('视频上传失败，将使用模拟评分')
+      } finally {
+        uploadAbortController = null
       }
     } else {
       console.warn('没有录制到视频，将使用模拟评分')
+      updateUploadState({
+        percentage: 0,
+        status: 'warning',
+        text: '未录制到有效视频，将继续尝试完成训练',
+        indeterminate: false
+      })
     }
     
     // 3. AI 预检测（快速分析）
     let shouldContinue = true
     try {
       ElMessage.info('AI 正在快速检测...')
+      updateUploadState({
+        percentage: 100,
+        status: '',
+        text: '视频已上传，正在进行 AI 快速检测...',
+        indeterminate: true
+      })
       // 调用预检测 API（稍后实现）
       const preCheckResult = await preCheckTraining(currentTraining.value.training_id)
       
@@ -456,9 +563,16 @@ const handleCompleteTraining = async () => {
     
     // 4. 完成训练（显示加载动画）
     ElMessage.info('正在计算评分...')
+    updateUploadState({
+      percentage: 100,
+      status: '',
+      text: 'AI 正在计算评分，请稍候...',
+      indeterminate: true
+    })
     const res = await completeTraining(currentTraining.value.training_id)
     
     ElMessage.success('训练已完成')
+    resetUploadState()
     stopCamera()
     
     // 更新当前训练状态
@@ -469,6 +583,12 @@ const handleCompleteTraining = async () => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('完成训练失败:', error)
+      updateUploadState({
+        percentage: uploadState.percentage || 100,
+        status: 'exception',
+        text: error.customMessage || error.response?.data?.detail || '训练完成失败',
+        indeterminate: false
+      })
       // 如果是状态错误，给出更友好的提示
       if (error.response?.data?.detail) {
         const detail = error.response.data.detail
@@ -541,6 +661,10 @@ const handleCancel = async () => {
     )
     
     // 停止摄像头
+    if (uploadAbortController) {
+      uploadAbortController.abort()
+      uploadAbortController = null
+    }
     stopCamera()
     
     // TODO: 调用后端 API 删除训练记录
@@ -549,6 +673,7 @@ const handleCancel = async () => {
     // 清空当前训练状态
     currentTraining.value = null
     isPaused.value = false
+    resetUploadState()
     
     ElMessage.success('已取消训练')
   } catch {
@@ -613,16 +738,9 @@ const getStatusText = (status) => {
 const resetTraining = () => {
   stopCamera()
   currentTraining.value = null
+  resetUploadState()
   ElMessage.success('已准备就绪，可以开始新的训练')
 }
-
-// 组件卸载时清理
-onUnmounted(() => {
-  stopCamera()
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-  }
-})
 
 // 获取步骤进度
 const getStepProgress = (status) => {
@@ -651,6 +769,11 @@ const getStepStatusClass = (status) => {
 
 // 组件卸载时清理
 onUnmounted(() => {
+  if (uploadAbortController) {
+    uploadAbortController.abort()
+    uploadAbortController = null
+  }
+  resetUploadState()
   stopCamera()
   if (countdownTimer) {
     clearInterval(countdownTimer)
@@ -961,6 +1084,19 @@ onUnmounted(() => {
 .video-controls .el-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.upload-status-box {
+  padding: 16px 20px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.upload-status-box p {
+  margin: 10px 0 0;
+  color: #475569;
+  font-size: 14px;
+  text-align: center;
 }
 
 /* 步骤卡片优化 */

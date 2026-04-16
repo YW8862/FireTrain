@@ -174,6 +174,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Search } from '@element-plus/icons-vue'
 import axios from 'axios'
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
 const taskList = ref([])
 const loading = ref(false)
 const uploading = ref(false)
@@ -194,7 +195,7 @@ const pagination = reactive({
 })
 
 // 上传配置
-const uploadUrl = import.meta.env.VITE_API_BASE_URL + '/admin/videos/upload'
+const uploadUrl = apiBaseUrl + '/admin/videos/upload'
 const uploadHeaders = {
   Authorization: `Bearer ${localStorage.getItem('token')}`
 }
@@ -252,7 +253,7 @@ const fetchTasks = async () => {
   loading.value = true
   try {
     const response = await axios.get(
-      `${import.meta.env.VITE_API_BASE_URL}/admin/videos/tasks`,
+      `${apiBaseUrl}/admin/videos/tasks`,
       {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -307,7 +308,7 @@ const handleReDetect = async (task) => {
     )
     
     const response = await axios.post(
-      `${import.meta.env.VITE_API_BASE_URL}/admin/videos/tasks/${task.id}/re-detect`,
+      `${apiBaseUrl}/admin/videos/tasks/${task.id}/re-detect`,
       {},
       {
         headers: {
@@ -339,7 +340,7 @@ const handleDelete = async (task) => {
     )
     
     await axios.delete(
-      `${import.meta.env.VITE_API_BASE_URL}/admin/videos/tasks/${task.id}`,
+      `${apiBaseUrl}/admin/videos/tasks/${task.id}`,
       {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`
