@@ -1,449 +1,263 @@
-# 🔥 FireTrain - 消防技能训练系统
+# FireTrain
 
-<div align="center">
+FireTrain 是一个面向消防技能训练的智能评测系统，当前聚焦灭火器实操训练。项目提供用户端训练流程、AI 视频分析与评分、训练历史与统计看板，以及后台管理能力。
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
-[![Node.js](https://img.shields.io/badge/node-20.x-green.svg)](https://nodejs.org/)
-[![Vue](https://img.shields.io/badge/vue-3.5.x-green.svg)](https://vuejs.org/)
-[![FastAPI](https://img.shields.io/badge/fastapi-0.109.0-green.svg)](https://fastapi.tiangolo.com/)
+## 项目概览
 
-**基于 AI 视觉识别的消防技能智能训练平台**
+- 前端基于 `Vue 3 + Vite + Element Plus`
+- 后端基于 `FastAPI + SQLAlchemy`
+- AI 能力基于 `YOLOv8`、`MediaPipe` 和规则/LLM 评分
+- 默认开发数据库为 `SQLite`，仓库内也提供了 `MySQL` 的 `docker-compose` 编排
 
-[特性](#--功能特性) • [快速开始](#--快速开始) • [技术栈](#-技术栈) • [项目结构](#-项目结构) • [API 文档](#-api-文档) • [开发指南](#-开发指南)
+当前已覆盖的核心链路：
 
-</div>
+- 用户注册、登录、JWT 鉴权
+- 灭火器训练创建、视频上传、预检测、完整评分
+- 训练报告、历史记录、个人统计
+- 后台管理员、用户、训练记录、操作日志、管理员视频检测
 
----
+## 技术栈
 
-## 📖 项目简介
+### 后端
 
-FireTrain 是一个现代化的消防技能训练系统，结合了计算机视觉和人工智能技术，为消防员提供智能化、标准化的操作训练平台。系统通过 YOLOv8 和 MediaPipe 实时分析操作动作，自动评估训练质量，帮助消防员掌握正确的操作流程。
+- `Python 3.10+`
+- `FastAPI 0.109.0`
+- `SQLAlchemy 2.0`
+- `Pydantic 2`
+- `PyTorch 2.2`
+- `OpenCV / MediaPipe / Ultralytics`
 
-### 🎯 核心优势
+### 前端
 
-- **AI 智能评估** - 基于计算机视觉技术，实时分析操作动作
-- **标准化流程** - 严格按照消防操作规范，培养正确习惯
-- **数据统计分析** - 记录训练历史，可视化展示进步轨迹
-- **实时反馈** - 即时纠正错误动作，提升训练效果
+- `Node.js 20+`
+- `Vue 3.5`
+- `Vite 7`
+- `Element Plus`
+- `Pinia`
+- `Vue Router`
+- `ECharts`
 
----
+## 目录结构
 
-## ✨ 功能特性
-
-### 👤 用户功能
-
-- ✅ **用户认证系统** - 注册、登录、JWT Token 认证
-- ✅ **个人中心** - 查看个人信息、训练统计
-- ✅ **训练记录** - 完整的训练历史查询
-- ✅ **数据报表** - 个人训练数据分析与可视化
-
-### 🎓 训练功能
-
-- ✅ **灭火器操作训练** - 6 步标准流程教学与考核
-  1. 准备阶段（个人防护、逃生路线确认）
-  2. 提起灭火器（腿部力量使用）
-  3. 拔保险销（拉环操作）
-  4. 握喷管（双手稳固握持）
-  5. 瞄准火源（对准根部，2-3 米距离）
-  6. 压把手（均匀用力，左右扫射）
-
-- ✅ **AI 动作识别** - 实时姿态分析与评分
-- ✅ **视频录制** - 训练过程全程记录
-- ✅ **即时反馈** - 每步操作实时评估与建议
-
-### 📊 管理功能
-
-- ✅ **训练统计** - 多维度数据分析（ECharts 可视化）
-- ✅ **成绩报告** - 详细评分与改进建议
-- ✅ **历史记录** - 可追溯的训练档案
-
----
-
-## 🛠️ 技术栈
-
-### 后端技术
-
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| **Python** | 3.9+ | 主要编程语言 |
-| **FastAPI** | 0.109.0 | 高性能 Web 框架 |
-| **SQLAlchemy** | 2.0.25 | ORM 框架 |
-| **Pydantic** | 2.5.3 | 数据验证 |
-| **YOLOv8** | 8.1.10 | 目标检测模型 |
-| **MediaPipe** | 0.10.11 | 姿态识别 |
-| **OpenCV** | 4.9.0.80 | 计算机视觉 |
-| **PyTorch** | 2.2.0 | 深度学习框架 |
-
-### 前端技术
-
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| **Vue 3** | 3.5.30 | 渐进式 JavaScript 框架 |
-| **Vite** | 7.3.1 | 下一代前端构建工具 |
-| **Element Plus** | 2.13.5 | Vue 3 组件库 |
-| **Pinia** | 3.0.4 | Vue 状态管理 |
-| **Vue Router** | 5.0.3 | 官方路由管理器 |
-| **Axios** | 1.13.6 | HTTP 客户端 |
-| **ECharts** | 6.0.0 | 数据可视化库 |
-
-### 基础设施
-
-- **Docker** - 容器化部署
-- **MySQL 8.0** - 生产数据库
-- **SQLite** - 开发数据库
-- **HTTPS** - SSL/TLS 加密通信
-
----
-
-## 📁 项目结构
-
-```
+```text
 FireTrain/
-├── backend/                    # 后端服务
-│   ├── app/
-│   │   ├── ai/                # AI 模块
-│   │   │   ├── fire_extinguisher_detector.py  # 灭火器检测
-│   │   │   ├── pose_analyzer.py              # 姿态分析
-│   │   │   ├── rule_engine.py                # 规则引擎
-│   │   │   └── feedback_generator.py         # 反馈生成
-│   │   ├── api/               # API 路由
-│   │   │   ├── users.py       # 用户接口
-│   │   │   ├── training.py    # 训练接口
-│   │   │   └── statistics.py  # 统计接口
-│   │   ├── core/              # 核心配置
-│   │   │   ├── config.py      # 配置管理
-│   │   │   └── security.py    # 安全认证
-│   │   ├── db/                # 数据库
-│   │   │   ├── base.py        # 基类
-│   │   │   └── session.py     # 会话管理
-│   │   ├── models/            # 数据模型
-│   │   │   ├── user.py        # 用户模型
-│   │   │   └── training_record.py  # 训练记录
-│   │   ├── schemas/           # Pydantic 模式
-│   │   ├── services/          # 业务逻辑
-│   │   └── middleware/        # 中间件
-│   ├── tests/                 # 测试文件
-│   ├── requirements.txt       # Python 依赖
-│   └── Dockerfile            # Docker 配置
-│
-├── frontend/                   # 前端应用
-│   ├── src/
-│   │   ├── views/             # 页面组件
-│   │   │   ├── HomeView.vue          # 首页
-│   │   │   ├── TrainingView.vue      # 训练页
-│   │   │   ├── HistoryView.vue       # 历史页
-│   │   │   ├── StatsView.vue         # 统计页
-│   │   │   └── ProfileView.vue       # 个人中心
-│   │   ├── components/        # 公共组件
-│   │   │   └── NavBar.vue     # 导航栏
-│   │   ├── api/               # API 调用
-│   │   ├── store/             # 状态管理
-│   │   ├── router/            # 路由配置
-│   │   └── utils/             # 工具函数
-│   ├── package.json          # 依赖配置
-│   └── Dockerfile            # Docker 配置
-│
-├── data/                      # 数据目录
-│   ├── models/               # AI 模型
-│   └── videos/               # 训练视频
-│
-├── db/                        # 数据库脚本
-│   └── init.sql              # 初始化脚本
-│
-├── certs/                     # SSL 证书
-│   ├── cert.pem
-│   └── key.pem
-│
-├── docker-compose.yml         # Docker 编排
-├── .env.example              # 环境变量示例
-└── Makefile                  # 快捷命令
+├── backend/                # FastAPI 后端、AI 推理、测试
+├── frontend/               # Vue 前端
+├── data/                   # 模型、视频、运行时数据
+├── db/                     # SQL 初始化脚本
+├── docs/                   # 设计、API、数据库等文档
+├── scripts/                # 本地启动、日志、证书等脚本
+├── certs/                  # 本地 HTTPS 证书
+├── docker-compose.yml
+├── Makefile
+└── .env.example
 ```
 
----
+## 快速开始
 
-## 🚀 快速开始
+### 环境要求
 
-### 前置要求
+- `Python 3.10+`
+- `Node.js 20+`
+- `npm 10+`
+- `make`（推荐）
+- `Docker / Docker Compose`（可选）
 
-- **Python** 3.9+ (推荐 3.10)
-- **Node.js** 20.x
-- **npm** 10+
-- **Docker** 29+ (可选，用于容器化部署)
-- **Docker Compose** V2 5.0+
-
-### 方式一：Docker 部署（推荐）
-
-#### 1. 克隆项目
-
-```bash
-git clone <repository-url>
-cd FireTrain
-```
-
-#### 2. 配置环境变量
+### 1. 初始化环境变量
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，根据需要修改配置
 ```
 
-#### 3. 启动服务
+建议至少检查这些配置项：
+
+- `JWT_SECRET_KEY`
+- `DATABASE_URL`
+- `MODEL_DIR`
+- `VIDEO_DIR`
+- `LLM_API_KEY`
+
+### 2. 本地开发启动
+
+推荐直接使用仓库自带脚本：
 
 ```bash
-# 使用 Docker Compose 启动所有服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
+make install-backend
+make install-frontend
+make local-up
 ```
 
-#### 4. 访问应用
+常用配套命令：
 
-- **前端**: http://localhost:5173
-- **后端 API**: https://localhost:8000
-- **API 文档**: https://localhost:8000/docs
+```bash
+make local-logs
+make local-down
+make help
+```
 
-### 方式二：本地开发
+脚本会处理这些事情：
 
-#### 1. 后端启动
+- 创建并使用 `backend/.venv`
+- 初始化数据库
+- 启动后端与前端
+- 将日志写入 `logs/`
+
+### 3. 手动启动（需要时）
+
+后端：
 
 ```bash
 cd backend
-
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 初始化数据库
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
 python scripts/init_db.py
-
-# 启动后端服务
-uvicorn app.main:app --reload --ssl-keyfile=../certs/key.pem --ssl-certfile=../certs/cert.pem
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### 2. 前端启动
+前端：
 
 ```bash
 cd frontend
-
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-#### 3. 访问应用
-
-- **前端**: http://localhost:5173
-- **后端 API**: https://localhost:8000
-
----
-
-## 🔐 认证说明
-
-### JWT Token 机制
-
-系统采用 JWT（JSON Web Token）进行身份认证：
-
-1. **登录** - 用户输入账号密码获取 access_token
-2. **存储** - Token 保存在 localStorage
-3. **请求** - 每次请求携带 Token
-4. **验证** - 后端验证 Token 有效性
-
-### 受保护的路由
-
-以下路由需要登录后访问：
-
-- `/training` - 训练页面
-- `/history` - 历史记录
-- `/stats` - 数据统计
-- `/profile` - 个人中心
-- `/report/:id` - 训练报告
-
----
-
-## 📡 API 文档
-
-### 端点概览
-
-#### 用户接口 (`/api/users`)
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| POST | `/register` | 用户注册 | ❌ |
-| POST | `/login` | 用户登录 | ❌ |
-| GET | `/me` | 获取当前用户信息 | ✅ |
-| PUT | `/me` | 更新用户信息 | ✅ |
-| POST | `/logout` | 退出登录 | ✅ |
-
-#### 训练接口 (`/api/training`)
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| POST | `/` | 开始训练 | ✅ |
-| GET | `/{id}` | 获取训练详情 | ✅ |
-| PUT | `/{id}/complete` | 完成训练 | ✅ |
-| DELETE | `/{id}` | 取消训练 | ✅ |
-| GET | `/history` | 获取历史记录 | ✅ |
-
-#### 统计接口 (`/api/statistics`)
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET | `/overview` | 总体统计 | ✅ |
-| GET | `/daily` | 每日统计 | ✅ |
-| GET | `/weekly` | 每周统计 | ✅ |
-| GET | `/monthly` | 每月统计 | ✅ |
-
-### 请求示例
-
-#### 用户登录
+### 4. Docker 启动
 
 ```bash
-curl -X POST "https://localhost:8000/api/users/login" \
+docker compose up -d
+docker compose logs -f
+docker compose down
+```
+
+说明：
+
+- 当前 `docker-compose.yml` 中已包含 `mysql`、`backend`、`frontend`
+- 后端容器默认仍使用 `SQLite` 数据库地址；如果要切到 MySQL，需要同步调整 `DATABASE_URL`
+
+## 访问地址
+
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:8000`
+- Swagger：`http://localhost:8000/docs`
+- ReDoc：`http://localhost:8000/redoc`
+- 健康检查：`http://localhost:8000/health`
+
+如果本地配置了证书，也可以通过 HTTPS 启动部分脚本流程。
+
+## 常用命令
+
+```bash
+make install-backend   # 安装后端依赖
+make install-frontend  # 安装前端依赖
+make lint              # 前后端代码检查
+make test              # 运行关键后端测试
+make test-backend-all  # 运行完整后端测试
+make test-frontend     # 运行前端测试
+make docker-up         # Docker 启动
+make docker-down       # Docker 停止
+```
+
+## API 概览
+
+当前后端主要路由前缀如下：
+
+| 模块 | 前缀 | 说明 |
+|------|------|------|
+| 用户 | `/api/user` | 注册、登录、个人信息、退出、身份切换 |
+| 训练 | `/api/training` | 开始训练、视频上传、预检测、评分、历史查询 |
+| 统计 | `/api/stats` | 个人统计、趋势分析、步骤分析、总览 |
+| 后台 | `/api/admin` | 管理员、用户、训练数据、操作日志 |
+| 后台视频检测 | `/api/admin/video` | 管理员上传视频检测 |
+
+示例：
+
+```bash
+curl -X POST "http://localhost:8000/api/user/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=testuser&password=testpass123"
+```
+
+```bash
+curl -X POST "http://localhost:8000/api/training/start" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "testuser",
-    "password": "testpass123"
+    "training_type": "extinguisher",
+    "duration_seconds": 60
   }'
 ```
 
-#### 开始训练
+更完整的接口说明见 `docs/API 接口文档.md`。
 
-```bash
-curl -X POST "https://localhost:8000/api/training/" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "training_type": "fire_extinguisher",
-    "duration_seconds": 120
-  }'
-```
+## 前端页面
 
-完整 API 文档请访问：https://localhost:8000/docs
+用户侧主要页面：
 
----
+- `/`
+- `/login`
+- `/register`
+- `/training`
+- `/report/:id`
+- `/history`
+- `/profile`
+- `/stats`
 
-## 🧪 测试
+后台主要页面：
 
-### 后端测试
+- `/admin/dashboard`
+- `/admin/users`
+- `/admin/trainings`
+- `/admin/video-upload`
+- `/admin/logs`
+- `/admin/admins`
+
+## 测试与代码检查
+
+后端：
 
 ```bash
 cd backend
-source venv/bin/activate
-
-# 运行所有测试
+. .venv/bin/activate
 pytest
-
-# 运行特定测试
-pytest tests/test_user_api.py -v
-
-# 查看测试覆盖率
-pytest --cov=app --cov-report=html
 ```
 
-### 前端测试
+前端：
 
 ```bash
 cd frontend
-
-# 运行测试
-npm run test
-
-# 代码检查
 npm run lint
-
-# 格式化检查
 npm run format:check
+npm run test
 ```
 
----
-
-## 🛠️ 开发指南
-
-### 添加新的训练类型
-
-1. **后端** - 在 `backend/app/ai/` 添加新的检测逻辑
-2. **评分规则** - 在 `backend/app/services/scoring_service.py` 添加评分标准
-3. **前端页面** - 在 `frontend/src/views/` 添加训练界面
-4. **路由配置** - 更新 `frontend/src/router/index.js`
-
-### 数据库迁移
+如果只想走项目统一入口，直接执行：
 
 ```bash
-# 使用 Alembic 进行迁移（推荐）
-alembic revision --autogenerate -m "Description"
-alembic upgrade head
+make lint
+make test
 ```
 
-### 添加新的 API 端点
+## 相关文档
 
-```python
-# backend/app/api/your_module.py
-from fastapi import APIRouter, Depends
+- `docs/API 接口文档.md`
+- `docs/数据库设计.md`
+- `docs/YOLOv8_检测模块使用指南.md`
+- `docs/身份切换功能说明.md`
+- `scripts/README.md`
+- `develop.md`
 
-router = APIRouter(prefix="/api/your-module", tags=["your-module"])
+## 开发提示
 
-@router.get("/endpoint")
-async def get_endpoint():
-    return {"message": "Hello"}
-```
+- 后端入口：`backend/app/main.py`
+- 前端路由：`frontend/src/router/index.js`
+- AI 推理主服务：`backend/app/ai/training_inference_service.py`
+- 训练数据访问层：`backend/app/repositories/training_repository.py`
 
----
+## 注意事项
 
-## 📊 评分系统
-
-### 灭火器操作评分标准
-
-| 步骤 | 权重 | 评分要点 |
-|------|------|----------|
-| **提灭火器** | 20% | 姿势正确、使用腿部力量 |
-| **拔保险销** | 20% | 拉环操作准确、力度适中 |
-| **握喷管** | 15% | 双手稳固、位置正确 |
-| **瞄准火源** | 20% | 对准根部、距离适当（2-3 米） |
-| **压把手** | 25% | 用力均匀、左右扫射 |
-
-### 等级评定
-
-- **优秀** (≥90 分) - 操作规范，动作标准
-- **良好** (80-89 分) - 操作基本规范，有小瑕疵
-- **合格** (60-79 分) - 完成操作，需改进
-- **待改进** (<60 分) - 操作不规范，需重新训练
-
----
-
-## 🔧 常见问题
-
-### Q: 无法访问摄像头？
-
-A: 请检查浏览器权限设置：
-- Chrome: 地址栏左侧锁图标 → 摄像头权限 → 允许
-- Firefox: 选项 → 隐私与安全 → 权限 → 摄像头
-
-### Q: HTTPS 证书警告？
-
-A: 开发环境使用自签名证书，出现警告是正常的。可以点击"继续访问"或导入 `certs/` 目录中的证书。
-
-### Q: 数据库连接失败？
-
-A: 检查以下几点：
-1. 确认 MySQL 服务已启动
-2. 检查 `.env` 文件中的数据库配置
-3. 确认数据库用户权限正确
-
-### Q: AI 模型加载失败？
-
-A: 确保已下载模型文件：
-```bash
-# YOLOv8 模型会自动下载
-# 检查路径：backend/yolov8n.pt
-```
+- `README` 默认按当前代码状态编写，若新增训练类型或改动接口，请同步更新文档
+- `.env.example` 仅应保留示例值，部署前请替换全部敏感配置
+- 本地脚本依赖 `backend/.venv`，首次运行前请先执行 `make install-backend`
 
