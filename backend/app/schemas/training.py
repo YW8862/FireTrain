@@ -35,6 +35,7 @@ class TrainingRecordResponse(BaseModel):
     """训练记录响应"""
     id: int
     user_id: int
+    username: Optional[str] = None
     training_type: str
     status: str
     total_score: Decimal

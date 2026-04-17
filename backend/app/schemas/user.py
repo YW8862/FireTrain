@@ -96,13 +96,16 @@ class AdminCreateRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
     email: EmailStr = Field(..., description="邮箱")
     password: str = Field(..., min_length=6, max_length=50, description="密码")
-    role: str = Field(..., description="角色 (admin 或 root)")
+    role: str = Field("admin", description="角色 (仅允许 admin，Root 账号唯一且不可新增)")
     can_switch_role: bool = Field(True, description="是否允许角色切换")
 
 
 class AdminUpdateRoleRequest(BaseModel):
     """修改管理员角色请求"""
-    role: str = Field(..., description="目标角色 (student, admin 或 root，兼容旧值 user)")
+    role: str = Field(
+        ...,
+        description="目标角色，仅允许 student 或 admin（兼容旧值 user）；Root 账号唯一且不可新增"
+    )
 
 
 class AdminInfoResponse(BaseModel):

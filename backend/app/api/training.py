@@ -499,9 +499,13 @@ async def get_training_detail(
             detail="无权查看此训练记录"
         )
     
+    # 查询训练记录所属用户，便于前端直接展示用户名
+    training_owner = await user_repo.get_by_id(training.user_id)
+
     return TrainingDetailResponse(
         id=training.id,
         user_id=training.user_id,
+        username=training_owner.username if training_owner else None,
         training_type=training.training_type,
         status=training.status,
         total_score=training.total_score,

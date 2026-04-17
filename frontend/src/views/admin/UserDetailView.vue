@@ -75,7 +75,6 @@
                 style="width: 100%"
               >
                 <el-option label="管理员" value="admin" />
-                <el-option label="Root" value="root" />
               </el-select>
             </el-form-item>
           </el-col>

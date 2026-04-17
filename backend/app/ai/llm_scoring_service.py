@@ -28,6 +28,9 @@ def _build_scoring_system_prompt() -> str:
 2. 检测与姿态统计
 3. 每个步骤的完成情况、置信度、时长、问题点
 4. 规则引擎给出的基线分
+5. （可能存在）"证据强度提示"：当状态机只识别到少数步骤但底层证据充足时，
+   请不要机械按步骤数扣分，而是结合灭火器出现帧数、姿态帧数、手臂动作等
+   帧级证据合理推断每个步骤是否隐含完成，给出公允评分。
 
 统一训练步骤如下：
 {chr(10).join(step_descriptions)}
@@ -36,6 +39,12 @@ def _build_scoring_system_prompt() -> str:
 - 动作完整性：{DIMENSION_WEIGHTS['action_completeness']}
 - 姿态规范性：{DIMENSION_WEIGHTS['pose_standardization']}
 - 操作时效性：{DIMENSION_WEIGHTS['timeliness']}
+
+评分原则：
+- 即使状态机仅识别出 0-2 个步骤，只要存在充分的灭火器/姿态证据，应给出 40-70 分区间的推断分数
+- 完全没有任何证据时才给 0 分
+- 有完整步骤链但动作略有瑕疵应给 70-85 分
+- 步骤完整且动作规范给 85-100 分
 
 请输出严格 JSON，不要输出 JSON 以外的内容：
 {{
@@ -96,6 +105,30 @@ class LLMScoringService:
         pose_stats_summary = summary.get("pose_stats_summary", {})
         step_feature_summary = summary.get("step_feature_summary", {})
 
+        # 证据强度评估：帮助 LLM 判断是否应走"弱证据推断"路径
+        completed_count = summary.get("completed_steps_count", 0)
+        processed_frames = max(summary.get("processed_frames", 0), 1)
+        ext_frames = detection_stats.get("fire_extinguisher", {}).get("frame_count", 0)
+        pose_frames = summary.get("pose_frame_count", 0)
+        ext_ratio = ext_frames / processed_frames
+        pose_ratio = pose_frames / processed_frames
+        evidence_hint_lines: List[str] = []
+        if completed_count < 4 and (ext_ratio > 0.2 or pose_ratio > 0.5):
+            evidence_hint_lines.append(
+                f"⚠️ 状态机仅识别出 {completed_count}/6 个完整步骤，"
+                f"但灭火器出现 {ext_frames}/{processed_frames} 帧（{ext_ratio:.0%}），"
+                f"人体姿态 {pose_frames}/{processed_frames} 帧（{pose_ratio:.0%}）。"
+            )
+            evidence_hint_lines.append(
+                "这通常意味着视频中动作连贯但状态机分段保守（例如教学/示范视频、镜头切换频繁）。"
+                "请结合帧级证据推断隐含完成的步骤，给出合理推断分数（建议总分 40-70 分区间），"
+                "不要因步骤未被状态机显式完成就给 0 分。"
+            )
+        elif completed_count == 0 and ext_frames == 0 and pose_frames == 0:
+            evidence_hint_lines.append(
+                "⚠️ 视频中几乎没有有效证据（无灭火器、无姿态），可给极低分数或 0 分。"
+            )
+
         detection_lines = [
             f"- {class_name}: frame_count={stats.get('frame_count', 0)}, "
             f"detection_count={stats.get('detection_count', 0)}, "
@@ -135,6 +168,11 @@ class LLMScoringService:
             else "未提供规则基线分"
         )
 
+        evidence_hint_block = (
+            "【证据强度提示】\n" + "\n".join(evidence_hint_lines) + "\n"
+            if evidence_hint_lines else ""
+        )
+
         return f"""请根据以下灭火器训练摘要进行评分：
 
 【基础摘要】
@@ -159,7 +197,7 @@ class LLMScoringService:
 【规则引擎基线分】
 {baseline_text}
 
-请基于证据输出最终 JSON 评分结果。"""
+{evidence_hint_block}请基于证据输出最终 JSON 评分结果。"""
 
     async def _call_llm(self, user_prompt: str) -> str:
         url = f"{self.base_url}/chat/completions"

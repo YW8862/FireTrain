@@ -6,7 +6,7 @@ import os
 import random
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi.concurrency import run_in_threadpool
 
@@ -15,6 +15,7 @@ from app.ai.llm_scoring_service import LLMScoringService
 from app.core.config import settings
 from app.models.training_record import TrainingRecord
 from app.repositories.training_repository import TrainingRepository
+from app.services.analysis_progress import progress_tracker
 
 
 class TrainingService:
@@ -63,10 +64,14 @@ class TrainingService:
         if not os.path.exists(training.video_path):
             raise ValueError("视频文件不存在，无法完成训练")
 
+        # 先上报排队 / 加载模型阶段
+        progress_tracker.set_stage(training_id, "queued")
+
         analysis_result: Optional[Dict] = None
         analysis_error_reason: Optional[str] = None
         from app.ai.training_inference_service import TrainingInferenceService
 
+        progress_tracker.set_stage(training_id, "loading_model")
         inference_service = TrainingInferenceService(
             yolo_model_path=settings.YOLO_MODEL_PATH,
             yolo_conf_threshold=0.5,
@@ -74,10 +79,16 @@ class TrainingService:
         )
         try:
             try:
+                progress_tracker.set_stage(training_id, "video_analysis")
+
+                def _on_frame_progress(processed: int, total: int) -> None:
+                    progress_tracker.update_video_analysis(training_id, processed, total)
+
                 analysis_result = await run_in_threadpool(
                     lambda: inference_service.analyze_video(
                         video_path=training.video_path,
                         training_type=self._normalize_training_type(training.training_type),
+                        progress_callback=_on_frame_progress,
                     )
                 )
             except Exception as exc:
@@ -90,22 +101,44 @@ class TrainingService:
                 analysis_result.get("analysis_summary", analysis_result)
             )
             if not validation_result["is_valid"]:
+                progress_tracker.set_stage(
+                    training_id,
+                    "saving",
+                    message=f"关键步骤未识别完整：{validation_result['reason']}",
+                )
                 scoring_result = await self._generate_zero_score_result(
                     training_type=training.training_type,
                     reason=validation_result["reason"],
                     analysis_result=analysis_result,
                 )
             else:
-                scoring_result = await self._score_with_llm_or_fallback(
-                    analysis_result=analysis_result,
-                    allow_llm=use_ai_scoring,
-                )
+                progress_tracker.set_stage(training_id, "rule_scoring")
+                # 是否走 LLM 取决于调用方参数以及 LLM 服务配置
+                if use_ai_scoring and LLMScoringService.from_settings() is not None:
+                    scoring_result = await self._score_with_llm_or_fallback(
+                        analysis_result=analysis_result,
+                        allow_llm=True,
+                        training_id=training_id,
+                    )
+                else:
+                    scoring_result = await self._score_with_llm_or_fallback(
+                        analysis_result=analysis_result,
+                        allow_llm=False,
+                        training_id=training_id,
+                    )
         else:
+            progress_tracker.set_stage(
+                training_id,
+                "saving",
+                message=analysis_error_reason or "未获取到有效视频分析结果",
+            )
             scoring_result = await self._generate_zero_score_result(
                 training_type=training.training_type,
                 reason=analysis_error_reason or "未获取到有效视频分析结果",
                 analysis_result=analysis_result,
             )
+
+        progress_tracker.set_stage(training_id, "saving")
 
         completed_at = datetime.utcnow()
         duration_seconds = training.duration_seconds
@@ -125,6 +158,8 @@ class TrainingService:
             },
         )
 
+        progress_tracker.mark_done(training_id)
+
         return {
             "status": "done",
             "total_score": float(scoring_result["total_score"]),
@@ -139,25 +174,27 @@ class TrainingService:
         return training_type
 
     def _validate_detection_result(self, analysis_summary: Dict) -> Dict[str, str | bool]:
+        """判断分析结果是否可评分。
+
+        仅在"完全无可用信号"时拒绝评分。只要检测到灭火器或人体姿态，
+        就进入评分流程（规则引擎 + 可选 LLM），由评分层按证据强度给分，
+        不再因步骤数量不足一刀切 0 分。
+        """
         validity_checks = analysis_summary.get("validity_checks", {})
         supports_extinguisher_detection = analysis_summary.get("supports_extinguisher_detection", True)
         has_pose = bool(validity_checks.get("has_pose"))
-        has_step_signal = bool(validity_checks.get("has_step_signal")) or analysis_summary.get("completed_steps_count", 0) > 0
         has_extinguisher = bool(validity_checks.get("has_extinguisher"))
 
         if not validity_checks and analysis_summary.get("total_detections", 0) > 0:
             return {"is_valid": True, "reason": ""}
 
-        if supports_extinguisher_detection and not has_extinguisher:
-            return {"is_valid": False, "reason": "未稳定检测到灭火器"}
-        if not has_pose:
-            return {"is_valid": False, "reason": "未检测到有效人体姿态"}
-        if not has_step_signal:
-            return {"is_valid": False, "reason": "未识别到有效步骤特征"}
-        if analysis_summary.get("completed_steps_count", 0) < 2:
-            return {"is_valid": False, "reason": "有效步骤识别不足，暂无法判断完整训练过程"}
-        if float(analysis_summary.get("video_duration", 0)) < 15:
-            return {"is_valid": False, "reason": "视频时长过短，无法完成有效评估"}
+        # 同时没有姿态和灭火器 → 确实没证据，给 0 分
+        if not has_pose and (supports_extinguisher_detection and not has_extinguisher):
+            return {"is_valid": False, "reason": "视频中未检测到人体姿态和灭火器，无有效证据"}
+        # 视频过短（< 8s）：无法形成任何有效时序
+        if float(analysis_summary.get("video_duration", 0)) < 8:
+            return {"is_valid": False, "reason": "视频时长过短（不足 8 秒），无法完成评估"}
+        # 其余情况一律放行，由规则引擎和 LLM 基于证据强度给分
         return {"is_valid": True, "reason": ""}
 
     async def _generate_zero_score_result(
@@ -196,6 +233,7 @@ class TrainingService:
         self,
         analysis_result: Dict[str, Any],
         allow_llm: bool = True,
+        training_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         from app.ai.rule_engine import RuleEngine
         from app.ai.training_inference_service import TrainingInferenceService
@@ -237,6 +275,8 @@ class TrainingService:
         if not llm_service:
             return rule_result
 
+        if training_id is not None:
+            progress_tracker.set_stage(training_id, "llm_scoring")
         try:
             llm_result = await llm_service.score_training(analysis_result, baseline_score=rule_result)
             llm_result.setdefault("suggestions", rule_result.get("suggestions", []))
@@ -265,7 +305,30 @@ class TrainingService:
         step_scores["_performance_level"] = scoring_result.get("performance_level")
         step_scores["_score_source"] = scoring_result.get("score_source", "rule")
         step_scores["_analysis_summary"] = scoring_result.get("analysis_summary", {})
-        return step_scores
+        # JSON 列使用默认 json.dumps 序列化，Decimal/numpy 标量会抛 TypeError，
+        # 这里统一做一次 JSON-safe 清洗，避免一条 Decimal 把整条记录卡死在 processing
+        return self._sanitize_json(step_scores)
+
+    @classmethod
+    def _sanitize_json(cls, value: Any) -> Any:
+        """递归地把 Decimal / numpy 标量 / set 等转换成 JSON 可序列化的 Python 原生类型。"""
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, dict):
+            return {str(k): cls._sanitize_json(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._sanitize_json(item) for item in value]
+        if isinstance(value, set):
+            return [cls._sanitize_json(item) for item in value]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        # numpy 标量（如 float32/int64）有 .item() 可转成原生 Python 类型
+        if hasattr(value, "item") and callable(getattr(value, "item", None)):
+            try:
+                return value.item()
+            except Exception:
+                return str(value)
+        return value
 
     def _generate_mock_scoring(self) -> Dict:
         total_score = round(random.uniform(60, 85), 1)

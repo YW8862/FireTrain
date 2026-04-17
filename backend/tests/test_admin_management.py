@@ -133,8 +133,8 @@ def test_create_admin_as_root():
     assert data["can_switch_role"] is True
 
 
-def test_create_root_as_root():
-    """Root 用户可以创建新的 Root 用户"""
+def test_create_root_forbidden():
+    """系统内 Root 账号唯一，通过 API 创建新的 Root 用户应被拒绝"""
     token, _, _ = create_test_user(role="root")
 
     unique_id = str(uuid.uuid4())[:8]
@@ -150,9 +150,24 @@ def test_create_root_as_root():
         }
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["role"] == "root"
+    assert response.status_code == 400
+    assert "Root" in response.json()["detail"]
+
+
+def test_update_role_to_root_forbidden():
+    """不允许通过角色变更接口将任何账号提升为 Root"""
+    root_token, _, _ = create_test_user(role="root")
+    admin_token, _, _ = create_test_user(role="admin")
+    admin_id = get_profile(admin_token)["id"]
+
+    response = client.put(
+        f"/api/admin/admins/{admin_id}/role",
+        headers={"Authorization": f"Bearer {root_token}"},
+        json={"role": "root"}
+    )
+
+    assert response.status_code == 400
+    assert "Root" in response.json()["detail"]
 
 
 def test_create_admin_as_admin_forbidden():

@@ -19,6 +19,11 @@ from app.repositories.training_repository import TrainingRepository
 from app.core.config import settings
 from app.services.training_service import TrainingService
 from app.services.upload_service import save_upload_file
+from app.services.analysis_progress import (
+    STAGE_BASE_PROGRESS,
+    STAGE_LABELS,
+    progress_tracker,
+)
 from app.schemas.admin_video import AdminVideoStatusResponse, AdminVideoUploadResponse
 
 router = APIRouter(prefix="/api/admin/video", tags=["管理员视频检测"])
@@ -27,6 +32,28 @@ router = APIRouter(prefix="/api/admin/video", tags=["管理员视频检测"])
 def _build_status_response(training) -> AdminVideoStatusResponse:
     step_scores = training.step_scores or {}
     total_score = float(training.total_score) if training.total_score is not None else None
+
+    # 合并进程内进度追踪器与数据库状态
+    progress_snapshot = progress_tracker.get(training.id)
+
+    if training.status in ("done", "failed"):
+        # 终态：直接给 100%，使用数据库权威状态
+        stage = training.status
+        stage_label = STAGE_LABELS.get(stage, stage)
+        progress = 100.0
+        stage_message = (progress_snapshot or {}).get("stage_message")
+    elif progress_snapshot is not None:
+        stage = progress_snapshot["stage"]
+        stage_label = progress_snapshot["stage_label"]
+        progress = progress_snapshot["progress"]
+        stage_message = progress_snapshot["stage_message"]
+    else:
+        # processing 但追踪器里没有（比如后端刚重启），给一个占位
+        stage = "queued"
+        stage_label = STAGE_LABELS["queued"]
+        progress = STAGE_BASE_PROGRESS["queued"]
+        stage_message = None
+
     return AdminVideoStatusResponse(
         training_id=training.id,
         status=training.status,
@@ -35,6 +62,10 @@ def _build_status_response(training) -> AdminVideoStatusResponse:
         performance_level=step_scores.get("_performance_level"),
         analysis_summary=step_scores.get("_analysis_summary"),
         completed_at=training.completed_at,
+        stage=stage,
+        stage_label=stage_label,
+        progress=progress,
+        stage_message=stage_message,
     )
 
 
@@ -238,15 +269,29 @@ async def process_admin_video_analysis(training_id: int):
             print(f"❌ AI 分析失败 (训练ID: {training_id}): {e}")
             import traceback
             traceback.print_exc()
-            
+
+            progress_tracker.mark_failed(training_id, message=str(e)[:200])
+
+            # 先回滚之前失败的事务，否则后续任何写操作都会被 SQLAlchemy
+            # 以 "transaction has been rolled back due to a previous exception" 拒绝，
+            # 导致记录永远停留在 processing 状态
+            try:
+                await db.rollback()
+            except Exception as rollback_error:
+                print(f"⚠️ 回滚事务失败: {rollback_error}")
+
             # 更新状态为失败
             try:
                 training = await training_repo.get_by_id(training_id)
                 if training:
                     await training_repo.update(training, {
                         "status": "failed",
-                        "feedback": f"AI 分析失败: {str(e)}"
+                        "feedback": f"AI 分析失败: {str(e)[:500]}"
                     })
                     await db.commit()
             except Exception as update_error:
                 print(f"❌ 更新失败状态时出错: {update_error}")
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass

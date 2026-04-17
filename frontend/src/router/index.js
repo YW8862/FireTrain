@@ -115,6 +115,12 @@ const routes = [
         meta: { title: '管理员管理', requiresRole: ['root'] }
       },
       {
+        path: 'admins/:id',
+        name: 'AdminAccountDetail',
+        component: () => import('@/views/admin/AdminDetailView.vue'),
+        meta: { title: '管理员详情', requiresRole: ['root'] }
+      },
+      {
         path: 'report/:id',
         name: 'AdminReport',
         component: () => import('@/views/admin/AdminReportView.vue'),

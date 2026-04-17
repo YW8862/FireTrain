@@ -94,9 +94,42 @@
           <p><strong>文件名：</strong>{{ uploadResult.file_name }}</p>
             <p><strong>状态：</strong>{{ getStatusLabel(uploadResult.status) }}</p>
           <p><strong>服务端保存耗时：</strong>{{ uploadResult.save_duration_ms }} ms</p>
-            <p v-if="uploadResult.status === 'processing'">
-              <strong>分析进度：</strong>{{ analysisPolling ? '后台分析中，页面会自动刷新状态' : '等待下一次状态刷新' }}
-            </p>
+
+            <!-- 细粒度阶段 & 进度条 -->
+            <div v-if="uploadResult.status === 'processing'" class="analysis-progress">
+              <div class="analysis-progress__header">
+                <el-icon class="analysis-progress__spinner" :size="16"><Loading /></el-icon>
+                <span class="analysis-progress__stage">{{ uploadResult.stage_label || '后台分析中' }}</span>
+              </div>
+              <el-progress
+                :percentage="Math.round(uploadResult.progress || 0)"
+                :stroke-width="10"
+                :status="progressStatus(uploadResult)"
+              />
+              <p v-if="uploadResult.stage_message" class="analysis-progress__message">
+                {{ uploadResult.stage_message }}
+              </p>
+              <p v-else class="analysis-progress__message analysis-progress__message--muted">
+                {{ analysisPolling ? '页面会自动刷新，请稍候…' : '等待下一次状态刷新' }}
+              </p>
+              <ul class="analysis-progress__steps">
+                <li
+                  v-for="step in analysisSteps"
+                  :key="step.code"
+                  :class="stageStepClass(step.code, uploadResult)"
+                >
+                  <el-icon v-if="stageStepIcon(step.code, uploadResult) === 'done'" class="step-icon step-icon--done">
+                    <CircleCheck />
+                  </el-icon>
+                  <el-icon v-else-if="stageStepIcon(step.code, uploadResult) === 'active'" class="step-icon step-icon--active">
+                    <Loading />
+                  </el-icon>
+                  <span v-else class="step-icon step-icon--pending" />
+                  <span>{{ step.label }}</span>
+                </li>
+              </ul>
+            </div>
+
             <p v-if="uploadResult.status === 'done' && uploadResult.total_score !== null">
               <strong>总分：</strong>{{ uploadResult.total_score }}
             </p>
@@ -164,10 +197,50 @@
 import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, Loading, CircleCheck } from '@element-plus/icons-vue'
 import { DEFAULT_UPLOAD_TIMEOUT, uploadRequest } from '@/api/upload'
 import { getAdminVideoStatus } from '@/api/admin'
 import { TRAINING_TYPE_OPTIONS } from '@/utils/trainingType'
+
+// 分析流水线阶段定义（和后端 analysis_progress.py STAGE_LABELS 对齐）
+const analysisSteps = [
+  { code: 'loading_model', label: '加载 AI 模型' },
+  { code: 'video_analysis', label: '视频帧分析' },
+  { code: 'rule_scoring', label: '规则评分计算' },
+  { code: 'llm_scoring', label: '大模型点评' },
+  { code: 'saving', label: '结果保存' }
+]
+const stageOrder = ['queued', ...analysisSteps.map((s) => s.code), 'done']
+
+const stageIndex = (stage) => {
+  const idx = stageOrder.indexOf(stage)
+  return idx === -1 ? 0 : idx
+}
+
+const stageStepClass = (code, result) => {
+  if (!result) return 'step'
+  if (result.status === 'failed') {
+    return stageIndex(code) <= stageIndex(result.stage) ? 'step step--failed' : 'step'
+  }
+  if (stageIndex(code) < stageIndex(result.stage)) return 'step step--done'
+  if (code === result.stage) return 'step step--active'
+  return 'step'
+}
+
+const stageStepIcon = (code, result) => {
+  if (!result) return 'pending'
+  if (result.status === 'failed') return 'pending'
+  if (stageIndex(code) < stageIndex(result.stage)) return 'done'
+  if (code === result.stage) return 'active'
+  return 'pending'
+}
+
+const progressStatus = (result) => {
+  if (!result) return ''
+  if (result.status === 'failed') return 'exception'
+  if (result.status === 'done') return 'success'
+  return ''
+}
 
 const router = useRouter()
 
@@ -231,7 +304,11 @@ const pollTrainingStatus = async (trainingId, { silent = false } = {}) => {
       ...uploadResult.value,
       status: statusResult.status,
       total_score: statusResult.total_score,
-      feedback: statusResult.feedback
+      feedback: statusResult.feedback,
+      stage: statusResult.stage,
+      stage_label: statusResult.stage_label,
+      progress: statusResult.progress,
+      stage_message: statusResult.stage_message
     }
 
     if (statusResult.status === 'done') {
@@ -368,7 +445,11 @@ const handleUpload = async () => {
       status: response.status,
       save_duration_ms: response.save_duration_ms,
       total_score: null,
-      feedback: ''
+      feedback: '',
+      stage: 'queued',
+      stage_label: '任务已提交，等待分析',
+      progress: 0,
+      stage_message: null
     }
     
     ElMessage.success('视频上传成功，结果分析已开始')
@@ -557,6 +638,104 @@ onUnmounted(() => {
   margin: 5px 0;
   font-size: 14px;
   color: #606266;
+}
+
+.analysis-progress {
+  margin: 14px 0 10px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #f0f7ff 0%, #f8fbff 100%);
+  border: 1px solid #d6e8ff;
+  border-radius: 8px;
+}
+
+.analysis-progress__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #1d4ed8;
+  font-size: 14px;
+}
+
+.analysis-progress__spinner {
+  animation: ft-spin 1.2s linear infinite;
+}
+
+@keyframes ft-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.analysis-progress__message {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.analysis-progress__message--muted {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.analysis-progress__steps {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.analysis-progress__steps .step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  transition: color 0.2s, background 0.2s;
+}
+
+.analysis-progress__steps .step--done {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.analysis-progress__steps .step--active {
+  color: #1d4ed8;
+  background: rgba(29, 78, 216, 0.1);
+  font-weight: 600;
+}
+
+.analysis-progress__steps .step--failed {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.step-icon--pending {
+  border: 1.5px dashed #cbd5e1;
+  background: transparent;
+}
+
+.step-icon--done {
+  color: #16a34a;
+}
+
+.step-icon--active {
+  color: #1d4ed8;
+  animation: ft-spin 1.2s linear infinite;
 }
 
 .help-card {

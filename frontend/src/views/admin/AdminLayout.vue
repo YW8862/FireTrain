@@ -5,7 +5,7 @@
         <div class="admin-brand">
           <div class="admin-brand-mark">FT</div>
           <div>
-            <h2>FireTrain 后台管理</h2>
+            <h2>灭火器实操训练测评系统后台管理</h2>
             <p>训练数据、用户信息与视频分析管理</p>
           </div>
         </div>

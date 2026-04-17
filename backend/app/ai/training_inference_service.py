@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import Counter
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import cv2
 
@@ -42,8 +42,14 @@ class TrainingInferenceService:
         self,
         video_path: str,
         training_type: str = "fire_extinguisher",
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Dict[str, Any]:
-        """分析训练视频并输出统一摘要。"""
+        """分析训练视频并输出统一摘要。
+
+        Args:
+            progress_callback: 可选进度回调，接收 ``(processed_frames, total_frames)``。
+                每处理若干帧会触发一次（节流），用于将后台分析进度上报给前端。
+        """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError(f"无法打开视频：{video_path}")
@@ -59,6 +65,8 @@ class TrainingInferenceService:
         frame_idx = 0
         processed_frames = 0
         frame_skip = 1 if total_frames < 300 else 2
+        # 回调节流：每 5 帧或 2% 上报一次，避免锁竞争
+        report_every = max(5, total_frames // 50) if total_frames > 0 else 10
 
         while True:
             ret, frame = cap.read()
@@ -90,9 +98,22 @@ class TrainingInferenceService:
 
             frame_idx += 1
 
-        cap.release()
+            if progress_callback is not None and frame_idx % report_every == 0:
+                try:
+                    progress_callback(frame_idx, total_frames)
+                except Exception:
+                    # 进度回调异常不应影响分析主流程
+                    pass
 
-        step_sequence = self._recognize_action_sequence(frame_results)
+        cap.release()
+        # 循环结束后再触发一次最终进度（保证 100%）
+        if progress_callback is not None and total_frames > 0:
+            try:
+                progress_callback(total_frames, total_frames)
+            except Exception:
+                pass
+
+        step_sequence = self._recognize_action_sequence(frame_results, duration)
         step_times = self._calculate_step_times(step_sequence, duration)
         detection_stats = self._summarize_detections(frame_results)
         pose_stats_summary = self._summarize_pose_stats(all_pose_results)
@@ -316,26 +337,55 @@ class TrainingInferenceService:
             "detected_actions": detected_actions,
         }
 
-    def _recognize_action_sequence(self, frame_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """使用顺序状态机识别 6 个标准步骤。"""
+    # 状态机置信度阈值（下调以兼容教学视频等非理想录制场景）
+    _STEP_CONFIDENCE_THRESHOLD = 0.36
+    # 允许前向跳跃最多几步（step3 → step5 是合理的 +2 跳跃，但不允许 step1 → step6）
+    _MAX_FORWARD_JUMP = 2
+
+    def _recognize_action_sequence(
+        self,
+        frame_results: List[Dict[str, Any]],
+        total_duration: float,
+    ) -> List[Dict[str, Any]]:
+        """使用"宽松顺序 + 证据累积"状态机识别 6 个标准步骤。
+
+        改进点：
+        - 允许前向跳跃 ≤ 2 步（教学视频常有连续动作间"讲解跳跃"）
+        - 用视频相对进度替代 step1 的硬编码 8 秒
+        - 使用 9 帧滑窗累计证据，单帧噪声不再决定步骤切换
+        - 仅要求"证据累计"达阈值才切段，避免窗口短导致步骤漏判
+        """
         if not frame_results:
             return []
 
         expected_step_index = 1
         current_segment: Dict[str, Any] | None = None
         step_sequence: List[Dict[str, Any]] = []
+        window_size = 9  # 原来是 6，这里放大
 
         for idx, frame_data in enumerate(frame_results):
             timestamp = frame_data["timestamp"]
             features = frame_data["frame_features"]
             recent_features = [
                 item["frame_features"]
-                for item in frame_results[max(0, idx - 5): idx + 1]
+                for item in frame_results[max(0, idx - window_size + 1): idx + 1]
             ]
-            candidate_scores = self._score_step_candidates(timestamp, features, recent_features)
-            allowed_steps = {expected_step_index}
-            if expected_step_index < len(STEP_DEFINITIONS):
-                allowed_steps.add(expected_step_index + 1)
+            candidate_scores = self._score_step_candidates(
+                timestamp,
+                features,
+                recent_features,
+                total_duration,
+            )
+
+            # 宽松的允许集合：当前步骤 + 后续 _MAX_FORWARD_JUMP 步
+            allowed_steps = {
+                step_idx
+                for step_idx in candidate_scores
+                if expected_step_index <= step_idx <= expected_step_index + self._MAX_FORWARD_JUMP
+            }
+            if not allowed_steps:
+                allowed_steps = {expected_step_index}
+
             filtered_scores = {
                 step_idx: score for step_idx, score in candidate_scores.items() if step_idx in allowed_steps
             }
@@ -343,7 +393,7 @@ class TrainingInferenceService:
                 filtered_scores.items(),
                 key=lambda item: item[1],
             )
-            if dominant_score < 0.42:
+            if dominant_score < self._STEP_CONFIDENCE_THRESHOLD:
                 continue
 
             dominant_step_key = f"step{dominant_step}"
@@ -368,7 +418,8 @@ class TrainingInferenceService:
                 )
                 continue
 
-            if dominant_step == current_segment["step_index"] + 1:
+            # 允许前向跳跃 >= 1（而不是只限 +1）
+            if dominant_step > current_segment["step_index"]:
                 if self._is_step_segment_valid(current_segment):
                     step_sequence.append(self._finalize_step_segment(current_segment))
                 current_segment = self._create_step_segment(
@@ -389,8 +440,14 @@ class TrainingInferenceService:
         timestamp: float,
         features: Dict[str, Any],
         recent_features: List[Dict[str, Any]],
+        total_duration: float = 0.0,
     ) -> Dict[int, float]:
-        """计算当前帧属于各步骤的证据分数。"""
+        """计算当前帧属于各步骤的证据分数。
+
+        用视频相对进度（timestamp / total_duration）替代硬编码 8 秒，这样
+        对不同时长的视频都合理：前 25% 属于"早期"、25%-55% 属于"中期"、
+        55%-100% 属于"后期"。
+        """
         extinguisher_score = 1.0 if features["extinguisher_detected"] else 0.0
         pose_score = 1.0 if features["pose_available"] else 0.0
         stable_body_score = 1.0 if features["stable_body"] else 0.0
@@ -402,15 +459,33 @@ class TrainingInferenceService:
         aiming_score = 1.0 if features["aiming_posture"] else 0.0
         continuity_score = self._recent_extinguisher_ratio(recent_features)
         motion_score = self._recent_arm_motion_score(recent_features)
-        early_stage_score = 1.0 if timestamp <= 8 else 0.4
+
+        # 视频相对进度（0.0 - 1.0）
+        if total_duration > 0:
+            video_ratio = max(0.0, min(timestamp / total_duration, 1.0))
+        else:
+            # 兜底：用绝对时间近似
+            video_ratio = min(timestamp / 60.0, 1.0)
+
+        # 阶段相位分：按步骤在整段视频中的典型时间位置
+        early_stage = 1.0 if video_ratio <= 0.30 else (0.6 if video_ratio <= 0.50 else 0.3)
+        mid_stage = 1.0 if 0.15 <= video_ratio <= 0.70 else 0.5
+        late_stage = 1.0 if video_ratio >= 0.40 else 0.5
+        final_stage = 1.0 if video_ratio >= 0.55 else (0.6 if video_ratio >= 0.30 else 0.3)
 
         return {
-            1: min(1.0, 0.45 * pose_score + 0.35 * stable_body_score + 0.20 * early_stage_score),
-            2: min(1.0, 0.45 * extinguisher_score + 0.25 * arm_bent_score + 0.20 * stable_body_score + 0.10 * both_arms_score),
-            3: min(1.0, 0.35 * extinguisher_score + 0.25 * asymmetry_score + 0.20 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score),
-            4: min(1.0, 0.35 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.15 * stable_body_score + 0.10 * continuity_score),
-            5: min(1.0, 0.35 * extinguisher_score + 0.25 * aiming_score + 0.20 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score),
-            6: min(1.0, 0.30 * extinguisher_score + 0.20 * aiming_score + 0.20 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score),
+            # step1 准备阶段：主要看姿态+站稳，不再强制前 8 秒
+            1: min(1.0, 0.40 * pose_score + 0.30 * stable_body_score + 0.30 * early_stage),
+            # step2 提灭火器：灭火器出现 + 手臂弯曲
+            2: min(1.0, 0.40 * extinguisher_score + 0.25 * arm_bent_score + 0.15 * stable_body_score + 0.10 * both_arms_score + 0.10 * mid_stage),
+            # step3 拔保险销：双臂非对称 + 灭火器出现
+            3: min(1.0, 0.30 * extinguisher_score + 0.25 * asymmetry_score + 0.15 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * mid_stage),
+            # step4 握喷管：双臂可见 + 握持姿态
+            4: min(1.0, 0.30 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
+            # step5 瞄准火源：手臂伸展 + 瞄准姿态
+            5: min(1.0, 0.30 * extinguisher_score + 0.25 * aiming_score + 0.15 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
+            # step6 压把手：手臂运动 + 后期阶段
+            6: min(1.0, 0.25 * extinguisher_score + 0.20 * aiming_score + 0.15 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score + 0.10 * final_stage),
         }
 
     def _recent_extinguisher_ratio(self, recent_features: List[Dict[str, Any]]) -> float:
@@ -471,7 +546,13 @@ class TrainingInferenceService:
         return segment
 
     def _is_step_segment_valid(self, segment: Dict[str, Any]) -> bool:
-        min_seconds = STEP_BY_KEY[segment["step_key"]]["duration_range"][0] * 0.3
+        """判断步骤片段是否视为有效。
+
+        允许较短的"掠过式"片段被计入——教学视频中每个动作往往只停留 1-2 秒，
+        再苛刻的时长要求会让整个状态机对教学视频几乎完全失效。
+        """
+        # 原先是 duration_range 下限 * 0.3（约 1-3 秒），这里再放宽到 * 0.15
+        min_seconds = max(0.5, STEP_BY_KEY[segment["step_key"]]["duration_range"][0] * 0.15)
         duration = segment["end_timestamp"] - segment["start_timestamp"]
         return segment["frame_count"] >= 2 and duration >= min_seconds
 

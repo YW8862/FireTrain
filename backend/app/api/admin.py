@@ -201,11 +201,11 @@ async def create_admin(
     """
     from app.models.user import User
 
-    # 验证角色
-    if admin_data.role not in ["admin", "root"]:
+    # 只允许创建普通管理员，系统内 Root 账号仅保留一个且不可新增
+    if admin_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="角色必须是 admin 或 root"
+            detail="仅允许创建管理员（admin）账号，系统内 Root 账号唯一且不可新增"
         )
 
     user_repo = UserRepository(db)
@@ -330,11 +330,11 @@ async def update_admin_role(
     """
     target_role = STANDARD_USER_ROLE if role_data.role == LEGACY_USER_ROLE else role_data.role
 
-    # 验证角色
-    if target_role not in [STANDARD_USER_ROLE, "admin", "root"]:
+    # 只允许在普通用户与管理员之间切换，系统内 Root 账号唯一且不可新增/提升
+    if target_role not in [STANDARD_USER_ROLE, "admin"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="角色必须是 student、admin 或 root"
+            detail="角色只能设置为普通用户或管理员，Root 账号不可新增"
         )
 
     # 禁止修改自己的角色
@@ -367,8 +367,8 @@ async def update_admin_role(
     # 更新角色
     user.role = target_role
 
-    # 如果改为 admin 或 root，自动设置 can_switch_role
-    if target_role in ["admin", "root"]:
+    # 如果改为 admin，自动允许切换角色（便于在管理员与用户视图之间切换）
+    if target_role == "admin":
         user.can_switch_role = True
 
     await user_repo.update(user, {})
@@ -508,19 +508,49 @@ async def get_all_users(
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    keyword: Optional[str] = Query(None, description="搜索关键词（用户名/邮箱）")
+    keyword: Optional[str] = Query(None, description="搜索关键词（用户名/邮箱）"),
+    role: Optional[str] = Query(
+        None,
+        description="角色筛选：all/student/admin/root（仅 Root 可使用；非 Root 固定仅返回普通用户）"
+    )
 ):
     """
-    获取所有用户列表（支持分页、搜索、过滤）
-    
-    - 后台普通用户管理入口只返回普通用户
+    获取用户列表（支持分页、搜索、按角色过滤）
+
+    - 普通管理员：始终只返回普通用户（student/user）
+    - Root 用户：可通过 role 参数查看全部角色
+        - all 或留空：返回全部用户（普通用户 + 管理员 + Root）
+        - student：仅普通用户
+        - admin：仅管理员
+        - root：仅 Root
     """
     user_repo = UserRepository(db)
+
+    is_root = current_user.get("role") == "root"
+    standard_roles = [STANDARD_USER_ROLE, LEGACY_USER_ROLE]
+
+    if not is_root:
+        role_filter = standard_roles
+    else:
+        normalized_role = (role or "all").lower()
+        if normalized_role in ("all", ""):
+            role_filter = None
+        elif normalized_role in ("student", "user"):
+            role_filter = standard_roles
+        elif normalized_role == "admin":
+            role_filter = ["admin"]
+        elif normalized_role == "root":
+            role_filter = ["root"]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="role 参数必须是 all/student/admin/root 之一"
+            )
 
     users, total = await user_repo.query_with_filters(
         page=page,
         page_size=page_size,
-        role_filter=[STANDARD_USER_ROLE, LEGACY_USER_ROLE],
+        role_filter=role_filter,
         keyword=keyword
     )
     

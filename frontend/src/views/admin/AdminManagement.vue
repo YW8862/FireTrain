@@ -76,20 +76,23 @@
             <el-button type="warning" size="small" @click="handleResetPassword(row)">
               重置密码
             </el-button>
-            <el-dropdown @command="(cmd) => handleRoleChange(row, cmd)">
+            <el-dropdown
+              v-if="row.role !== 'root'"
+              @command="(cmd) => handleRoleChange(row, cmd)"
+            >
               <el-button type="primary" size="small">
                 修改角色 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="student" :disabled="['student', 'user'].includes(row.role)">
+                  <el-dropdown-item
+                    command="student"
+                    :disabled="['student', 'user'].includes(row.role)"
+                  >
                     普通用户
                   </el-dropdown-item>
                   <el-dropdown-item command="admin" :disabled="row.role === 'admin'">
                     管理员
-                  </el-dropdown-item>
-                  <el-dropdown-item command="root" :disabled="row.role === 'root'">
-                    Root
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -155,11 +158,9 @@
           />
         </el-form-item>
 
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="createForm.role" placeholder="请选择角色" style="width: 100%">
-            <el-option label="管理员" value="admin" />
-            <el-option label="Root" value="root" />
-          </el-select>
+        <el-form-item label="角色">
+          <el-tag type="warning">管理员</el-tag>
+          <span class="form-hint">系统仅保留唯一 Root 账号，仅支持创建管理员</span>
         </el-form-item>
 
         <el-form-item label="可切换角色">
@@ -212,11 +213,10 @@
           <el-select
             v-model="editForm.original_role"
             clearable
-            :disabled="!editForm.can_switch_role"
+            :disabled="!editForm.can_switch_role || editForm.role === 'root'"
             style="width: 100%"
           >
             <el-option label="管理员" value="admin" />
-            <el-option label="Root" value="root" />
           </el-select>
         </el-form-item>
         <el-form-item label="新密码">
@@ -296,9 +296,6 @@ const createRules = {
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, message: '密码至少 6 位', trigger: 'blur' }
-  ],
-  role: [
-    { required: true, message: '请选择角色', trigger: 'change' }
   ]
 }
 
@@ -553,5 +550,11 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.form-hint {
+  margin-left: 10px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

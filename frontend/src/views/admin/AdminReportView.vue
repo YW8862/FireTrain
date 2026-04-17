@@ -1,181 +1,250 @@
 <template>
-  <div class="admin-report-container">
-    <div class="admin-report-content">
-      <!-- 面包屑导航 -->
-      <el-breadcrumb separator="/" class="breadcrumb">
-        <el-breadcrumb-item :to="{ path: '/admin/dashboard' }">首页</el-breadcrumb-item>
+  <div class="admin-report-page">
+    <!-- 顶部面包屑 / 返回 -->
+    <div class="report-topbar">
+      <el-breadcrumb separator="/" class="report-breadcrumb">
+        <el-breadcrumb-item :to="{ path: '/admin/dashboard' }">控制台</el-breadcrumb-item>
         <el-breadcrumb-item :to="{ path: '/admin/trainings' }">训练数据</el-breadcrumb-item>
         <el-breadcrumb-item>训练报告</el-breadcrumb-item>
       </el-breadcrumb>
+      <el-button plain @click="$router.back()">
+        <el-icon><ArrowLeft /></el-icon>
+        <span>返回</span>
+      </el-button>
+    </div>
 
-      <div v-loading="loading" class="report-wrapper">
-        <!-- 训练记录信息卡片 -->
-        <el-card shadow="hover" class="info-card">
-          <template #header>
-            <div class="card-header">
-              <span class="card-title">训练记录详情</span>
-              <el-tag type="info" size="small">ID: {{ trainingInfo?.id }}</el-tag>
+    <div v-loading="loading" class="report-body">
+      <!-- Hero 区：总分 + 基本信息 -->
+      <section class="hero-card">
+        <div class="hero-left">
+          <div class="hero-meta">
+            <el-tag size="small" type="info" class="hero-id">记录 ID · {{ trainingInfo?.id ?? '-' }}</el-tag>
+            <el-tag
+              size="small"
+              :type="getStatusType(trainingInfo?.status)"
+              effect="light"
+            >
+              {{ getStatusLabel(trainingInfo?.status) }}
+            </el-tag>
+          </div>
+          <h1 class="hero-title">
+            {{ getTrainingTypeLabel(trainingInfo?.training_type) || '训练报告' }}
+          </h1>
+          <p class="hero-subtitle">
+            系统对本次实操全过程进行多维度量化分析，以下为评分与改进建议。
+          </p>
+
+          <dl class="hero-facts">
+            <div class="fact">
+              <dt>训练用户</dt>
+              <dd>
+                <el-icon class="fact-icon"><User /></el-icon>
+                <span class="fact-strong">{{ trainingInfo?.username || '-' }}</span>
+              </dd>
             </div>
-          </template>
-          <el-descriptions :column="3" border size="large">
-            <el-descriptions-item label="用户名" label-align="right">
-              <el-tag type="primary" effect="dark">{{ trainingInfo?.username }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="训练类型" label-align="right">
-              {{ getTrainingTypeLabel(trainingInfo?.training_type) }}
-            </el-descriptions-item>
-            <el-descriptions-item label="状态" label-align="right">
-              <el-tag :type="getStatusType(trainingInfo?.status)" effect="dark">
-                {{ getStatusLabel(trainingInfo?.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="开始时间" label-align="right">
-              {{ formatDateTime(trainingInfo?.created_at) }}
-            </el-descriptions-item>
-            <el-descriptions-item label="完成时间" label-align="right">
-              {{ trainingInfo?.completed_at ? formatDateTime(trainingInfo?.completed_at) : '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="训练时长" label-align="right">
-              <el-tag v-if="trainingInfo?.duration_seconds" type="warning">
-                {{ trainingInfo.duration_seconds }}秒
-              </el-tag>
-              <span v-else>-</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
+            <div class="fact">
+              <dt>开始时间</dt>
+              <dd>{{ formatDateTime(trainingInfo?.created_at) }}</dd>
+            </div>
+            <div class="fact">
+              <dt>完成时间</dt>
+              <dd>{{ trainingInfo?.completed_at ? formatDateTime(trainingInfo?.completed_at) : '-' }}</dd>
+            </div>
+            <div class="fact">
+              <dt>训练时长</dt>
+              <dd>
+                <el-icon class="fact-icon"><Timer /></el-icon>
+                <span>{{ trainingInfo?.duration_seconds ? `${trainingInfo.duration_seconds} 秒` : '-' }}</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
 
-        <!-- 评分概览卡片 -->
-        <el-row :gutter="20" class="score-cards">
-          <el-col :span="6">
-            <el-card shadow="hover" class="score-card total-score">
-              <div class="score-value">{{ reportData.total_score }}</div>
-              <div class="score-label">总分</div>
-              <el-tag :type="getPerformanceTagType(reportData.performance_level)" effect="dark" class="performance-tag">
-                {{ getPerformanceLabel(reportData.performance_level) }}
-              </el-tag>
-              <el-progress
-                :percentage="reportData.total_score"
-                :color="getScoreColor(reportData.total_score)"
-                :stroke-width="8"
-                :show-text="false"
+        <div class="hero-right">
+          <div class="score-ring">
+            <svg viewBox="0 0 120 120" class="ring-svg">
+              <circle cx="60" cy="60" r="52" class="ring-track" />
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                class="ring-value"
+                :stroke="getScoreColor(reportData.total_score)"
+                :stroke-dasharray="ringDasharray"
               />
-            </el-card>
-          </el-col>
-          <el-col :span="6">
-            <el-card shadow="hover" class="score-card">
-              <div
-                class="score-value"
-                :style="{ color: dimensionItems[0].hasData ? getDimensionColor(dimensionItems[0].score) : '#909399' }"
-              >
-                {{ dimensionItems[0].hasData ? dimensionItems[0].score : '暂无数据' }}
+            </svg>
+            <div class="ring-content">
+              <div class="ring-score" :style="{ color: getScoreColor(reportData.total_score) }">
+                {{ Math.round(reportData.total_score) }}
               </div>
-              <div class="score-label">动作完整性</div>
-            </el-card>
-          </el-col>
-          <el-col :span="6">
-            <el-card shadow="hover" class="score-card">
-              <div
-                class="score-value"
-                :style="{ color: dimensionItems[1].hasData ? getDimensionColor(dimensionItems[1].score) : '#909399' }"
-              >
-                {{ dimensionItems[1].hasData ? dimensionItems[1].score : '暂无数据' }}
-              </div>
-              <div class="score-label">姿态规范性</div>
-            </el-card>
-          </el-col>
-          <el-col :span="6">
-            <el-card shadow="hover" class="score-card">
-              <div
-                class="score-value"
-                :style="{ color: dimensionItems[2].hasData ? getDimensionColor(dimensionItems[2].score) : '#909399' }"
-              >
-                {{ dimensionItems[2].hasData ? dimensionItems[2].score : '暂无数据' }}
-              </div>
-              <div class="score-label">操作时效性</div>
-            </el-card>
-          </el-col>
-        </el-row>
+              <div class="ring-label">综合得分</div>
+            </div>
+          </div>
+          <el-tag
+            :type="getPerformanceTagType(reportData.performance_level)"
+            effect="dark"
+            size="large"
+            class="hero-level"
+          >
+            {{ getPerformanceLabel(reportData.performance_level) }}
+          </el-tag>
+        </div>
+      </section>
 
-        <!-- 详细分析区域 -->
-        <el-row :gutter="20">
-          <!-- 左侧：雷达图 -->
-          <el-col :span="10">
-            <el-card shadow="hover" class="chart-card">
-              <template #header>
-                <span class="card-title">能力维度分析</span>
-              </template>
-              <div v-if="hasDimensionData" ref="radarChartRef" class="radar-chart"></div>
-              <div v-else class="empty-state">暂无数据</div>
-            </el-card>
-          </el-col>
-
-          <!-- 右侧：步骤评分 -->
-          <el-col :span="14">
-            <el-card shadow="hover" class="steps-card">
-              <template #header>
-                <span class="card-title">步骤评分详情</span>
-              </template>
-              <div class="steps-list">
-                <template v-if="reportData.step_scores.length > 0">
-                  <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-item">
-                    <div class="step-header">
-                      <span class="step-name">
-                        <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
-                        {{ step.step_name }}
-                      </span>
-                      <el-tag :type="getScoreTagType(step.score)" effect="dark">
-                        {{ step.score }}分
-                      </el-tag>
-                    </div>
-                    <el-progress
-                      :percentage="step.score"
-                      :color="getStepColor(step.score)"
-                      :stroke-width="6"
-                    />
-                    <p v-if="step.feedback" class="step-feedback">{{ step.feedback }}</p>
-                  </div>
-                </template>
-                <div v-else class="empty-state">暂无数据</div>
-              </div>
-            </el-card>
-          </el-col>
-        </el-row>
-
-        <!-- 改进建议 -->
-        <el-card shadow="hover" class="suggestions-card">
-          <template #header>
-            <span class="card-title">训练改进建议</span>
-          </template>
-          <template v-if="suggestions.length > 0">
-            <el-alert
-              v-for="(suggestion, index) in suggestions"
-              :key="index"
-              :title="suggestion"
-              type="warning"
-              :closable="false"
-              show-icon
-              class="suggestion-item"
+      <!-- 维度统计卡片 -->
+      <section class="dim-grid">
+        <div
+          v-for="(dim, index) in dimensionItems"
+          :key="dim.key"
+          class="dim-card"
+          :class="{ 'dim-card--empty': !dim.hasData }"
+        >
+          <div class="dim-card__header">
+            <div class="dim-card__icon" :style="{ background: dimensionIconBg(index) }">
+              <el-icon :size="18"><component :is="dimensionIcon(index)" /></el-icon>
+            </div>
+            <div class="dim-card__title">{{ dim.label }}</div>
+          </div>
+          <div class="dim-card__value" :style="{ color: dim.hasData ? getScoreColor(dim.score) : '#94a3b8' }">
+            {{ dim.hasData ? dim.score.toFixed(1) : '—' }}
+            <span v-if="dim.hasData" class="dim-card__unit">/100</span>
+          </div>
+          <div class="dim-card__bar">
+            <div
+              class="dim-card__bar-fill"
+              :style="{
+                width: dim.hasData ? `${Math.min(100, Math.max(0, dim.score))}%` : '0%',
+                background: dim.hasData ? getScoreColor(dim.score) : '#e5e7eb'
+              }"
             />
-          </template>
-          <div v-else class="empty-state">暂无数据</div>
-        </el-card>
+          </div>
+          <div class="dim-card__comment">
+            {{ dim.comment || (dim.hasData ? '表现较稳定，无额外评语' : '暂无维度数据') }}
+          </div>
+        </div>
+      </section>
 
-        <!-- 原始反馈 -->
-        <el-card v-if="reportData.feedback" shadow="hover" class="feedback-card">
-          <template #header>
-            <span class="card-title">详细反馈</span>
-          </template>
-          <div class="feedback-content">{{ reportData.feedback }}</div>
-        </el-card>
-      </div>
+      <!-- 能力雷达 + 步骤评分 -->
+      <section class="analysis-row">
+        <div class="analysis-card radar-wrapper">
+          <div class="section-head">
+            <div class="section-title">
+              <el-icon class="section-title__icon"><DataAnalysis /></el-icon>
+              <span>能力维度分析</span>
+            </div>
+            <span class="section-hint">总分与三项能力对比</span>
+          </div>
+          <div v-if="hasDimensionData" ref="radarChartRef" class="radar-chart"></div>
+          <div v-else class="placeholder">
+            <el-icon :size="36"><PieChart /></el-icon>
+            <p>暂无能力维度数据</p>
+          </div>
+        </div>
+
+        <div class="analysis-card steps-wrapper">
+          <div class="section-head">
+            <div class="section-title">
+              <el-icon class="section-title__icon"><List /></el-icon>
+              <span>步骤评分详情</span>
+            </div>
+            <span class="section-hint">
+              共 {{ reportData.step_scores.length }} 个步骤
+            </span>
+          </div>
+
+          <div v-if="reportData.step_scores.length > 0" class="step-list">
+            <div
+              v-for="(step, index) in reportData.step_scores"
+              :key="index"
+              class="step-row"
+            >
+              <div class="step-row__index">{{ index + 1 }}</div>
+              <div class="step-row__body">
+                <div class="step-row__top">
+                  <span class="step-row__name">{{ step.step_name }}</span>
+                  <span
+                    class="step-row__score"
+                    :style="{ color: getScoreColor(step.score) }"
+                  >
+                    {{ Math.round(step.score) }}
+                    <span class="step-row__score-unit">分</span>
+                  </span>
+                </div>
+                <div class="step-row__bar">
+                  <div
+                    class="step-row__bar-fill"
+                    :style="{
+                      width: `${Math.min(100, Math.max(0, step.score))}%`,
+                      background: getScoreColor(step.score)
+                    }"
+                  />
+                </div>
+                <p v-if="step.feedback" class="step-row__feedback">{{ step.feedback }}</p>
+              </div>
+            </div>
+          </div>
+          <div v-else class="placeholder placeholder--inline">
+            <el-icon :size="28"><InfoFilled /></el-icon>
+            <p>未提取到步骤评分</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 改进建议 -->
+      <section class="analysis-card">
+        <div class="section-head">
+          <div class="section-title">
+            <el-icon class="section-title__icon"><Opportunity /></el-icon>
+            <span>训练改进建议</span>
+          </div>
+          <span class="section-hint">
+            {{ suggestions.length > 0 ? `共 ${suggestions.length} 条` : '未生成建议' }}
+          </span>
+        </div>
+        <ul v-if="suggestions.length > 0" class="suggestion-list">
+          <li v-for="(item, index) in suggestions" :key="index" class="suggestion-item">
+            <span class="suggestion-item__index">{{ index + 1 }}</span>
+            <span class="suggestion-item__text">{{ item }}</span>
+          </li>
+        </ul>
+        <div v-else class="placeholder placeholder--inline">
+          <el-icon :size="28"><InfoFilled /></el-icon>
+          <p>系统暂未生成改进建议</p>
+        </div>
+      </section>
+
+      <!-- 详细反馈 -->
+      <section v-if="reportData.feedback" class="analysis-card">
+        <div class="section-head">
+          <div class="section-title">
+            <el-icon class="section-title__icon"><ChatDotRound /></el-icon>
+            <span>详细反馈</span>
+          </div>
+        </div>
+        <div class="feedback-content">{{ reportData.feedback }}</div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import {
+  ArrowLeft,
+  User,
+  Timer,
+  DataAnalysis,
+  PieChart,
+  List,
+  Opportunity,
+  ChatDotRound,
+  InfoFilled,
+  Aim,
+  Medal,
+  Stopwatch
+} from '@element-plus/icons-vue'
 import { getTrainingDetail } from '@/api/training'
 import { getTrainingTypeLabel } from '@/utils/trainingType'
 import * as echarts from 'echarts'
@@ -194,11 +263,10 @@ const route = useRoute()
 const loading = ref(false)
 const radarChartRef = ref(null)
 let radarChart = null
+let resizeHandler = null
 
-// 训练记录完整信息
 const trainingInfo = ref(null)
 
-// 报告数据
 const reportData = reactive({
   total_score: 0,
   performance_level: null,
@@ -208,32 +276,44 @@ const reportData = reactive({
   analysis_summary: null
 })
 
-// 建议列表
 const suggestions = ref([])
 const dimensionItems = computed(() => getDimensionItems(reportData.dimension_scores))
 const hasDimensionData = computed(() => hasDimensionScores(reportData.dimension_scores))
 
-// 加载报告数据
+// 圆环 circumference = 2 * π * r (r=52)
+const RING_CIRCUMFERENCE = 2 * Math.PI * 52
+const ringDasharray = computed(() => {
+  const ratio = Math.min(1, Math.max(0, reportData.total_score / 100))
+  const value = RING_CIRCUMFERENCE * ratio
+  return `${value} ${RING_CIRCUMFERENCE - value}`
+})
+
+const dimensionIconMap = [Aim, Medal, Stopwatch]
+const dimensionIconBgMap = [
+  'linear-gradient(135deg, #1e40af, #3b82f6)',
+  'linear-gradient(135deg, #0f766e, #14b8a6)',
+  'linear-gradient(135deg, #b45309, #f59e0b)'
+]
+const dimensionIcon = (idx) => dimensionIconMap[idx] || Aim
+const dimensionIconBg = (idx) => dimensionIconBgMap[idx] || dimensionIconBgMap[0]
+
 const loadReportData = async () => {
   loading.value = true
   try {
     const res = await getTrainingDetail(route.params.id)
-    
-    // 保存完整训练信息
+
     trainingInfo.value = res
-    
-    // 解析评分数据
+
     reportData.total_score = parseFloat(res.total_score) || 0
     reportData.performance_level = extractPerformanceLevel(res)
     reportData.dimension_scores = res.dimension_scores || null
     reportData.feedback = res.feedback || ''
     reportData.analysis_summary = res.analysis_summary || null
-    
     reportData.step_scores = extractStepScores(res.step_scores)
-    
     suggestions.value = normalizeSuggestions(res.suggestions)
-    
-    // 渲染图表
+
+    // 等 DOM 更新后（v-if 渲染完成）再初始化雷达图
+    await nextTick()
     renderRadarChart()
   } catch (error) {
     console.error('加载报告失败:', error)
@@ -243,75 +323,86 @@ const loadReportData = async () => {
   }
 }
 
-// 渲染雷达图
 const renderRadarChart = () => {
   radarChart?.dispose()
   radarChart = null
 
   if (!radarChartRef.value || !hasDimensionData.value) return
-  
+
   radarChart = echarts.init(radarChartRef.value)
-  
-  const dimensions = [
-    { name: '动作完整性', score: dimensionItems.value[0].score ?? 0 },
-    { name: '姿态规范性', score: dimensionItems.value[1].score ?? 0 },
-    { name: '操作时效性', score: dimensionItems.value[2].score ?? 0 },
-    { name: '总体评分', score: reportData.total_score }
-  ]
-  
+
+  const dims = dimensionItems.value
   const option = {
+    tooltip: { trigger: 'item' },
     radar: {
-      indicator: dimensions.map(d => ({ name: d.name, max: 100 })),
-      radius: '65%',
-      center: ['50%', '50%']
+      indicator: [
+        { name: '动作完整性', max: 100 },
+        { name: '姿态规范性', max: 100 },
+        { name: '操作时效性', max: 100 },
+        { name: '综合得分', max: 100 }
+      ],
+      radius: '66%',
+      center: ['50%', '54%'],
+      splitNumber: 4,
+      axisName: {
+        color: '#475569',
+        fontSize: 12,
+        fontWeight: 500
+      },
+      splitArea: {
+        areaStyle: {
+          color: ['rgba(30, 64, 175, 0.02)', 'rgba(30, 64, 175, 0.05)']
+        }
+      },
+      axisLine: {
+        lineStyle: { color: 'rgba(30, 64, 175, 0.15)' }
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(30, 64, 175, 0.15)' }
+      }
     },
     series: [{
       type: 'radar',
+      symbol: 'circle',
+      symbolSize: 6,
       data: [{
-        value: dimensions.map(d => d.score),
-        name: '评分',
+        value: [
+          dims[0]?.hasData ? dims[0].score : 0,
+          dims[1]?.hasData ? dims[1].score : 0,
+          dims[2]?.hasData ? dims[2].score : 0,
+          reportData.total_score
+        ],
+        name: '本次评分',
+        lineStyle: { color: '#1e40af', width: 2.5 },
+        itemStyle: { color: '#1e40af' },
         areaStyle: {
-          color: 'rgba(64, 158, 255, 0.3)'
-        },
-        lineStyle: {
-          color: '#409eff',
-          width: 2
-        },
-        itemStyle: {
-          color: '#409eff'
+          color: new echarts.graphic.RadialGradient(0.5, 0.5, 0.8, [
+            { offset: 0, color: 'rgba(30, 64, 175, 0.35)' },
+            { offset: 1, color: 'rgba(30, 64, 175, 0.05)' }
+          ])
         }
       }]
-    }],
-    tooltip: {
-      trigger: 'item'
-    }
+    }]
   }
-  
+
   radarChart.setOption(option)
 }
 
-// 辅助方法
-const getStatusType = (status) => {
-  const types = {
-    'done': 'success',
-    'completed': 'success',
-    'in_progress': 'warning',
-    'processing': 'info',
-    'failed': 'danger'
-  }
-  return types[status] || 'info'
-}
+const getStatusType = (status) => ({
+  done: 'success',
+  completed: 'success',
+  in_progress: 'warning',
+  processing: 'info',
+  failed: 'danger'
+}[status] || 'info')
 
-const getStatusLabel = (status) => {
-  const labels = {
-    'done': '已完成',
-    'completed': '已完成',
-    'in_progress': '进行中',
-    'processing': '处理中',
-    'failed': '失败'
-  }
-  return labels[status] || status
-}
+const getStatusLabel = (status) => ({
+  done: '已完成',
+  completed: '已完成',
+  in_progress: '进行中',
+  processing: '处理中',
+  failed: '分析失败'
+}[status] || status || '-')
 
 const formatDateTime = (datetime) => {
   if (!datetime) return '-'
@@ -321,203 +412,511 @@ const formatDateTime = (datetime) => {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+    minute: '2-digit'
   })
 }
 
 const getScoreColor = (score) => {
-  if (score >= 90) return '#67C23A'
-  if (score >= 80) return '#67C23A'
-  if (score >= 60) return '#E6A23C'
-  return '#F56C6C'
-}
-
-const getDimensionColor = (score) => {
-  return getScoreColor(score)
-}
-
-const getScoreTagType = (score) => {
-  if (score >= 90) return 'success'
-  if (score >= 80) return 'success'
-  if (score >= 60) return 'warning'
-  return 'danger'
-}
-
-const getStepColor = (score) => {
-  return getScoreColor(score)
+  const s = Number(score) || 0
+  if (s >= 85) return '#10b981'
+  if (s >= 70) return '#2563eb'
+  if (s >= 60) return '#f59e0b'
+  return '#ef4444'
 }
 
 onMounted(() => {
   loadReportData()
-  window.addEventListener('resize', () => {
-    radarChart?.resize()
-  })
+  resizeHandler = () => radarChart?.resize()
+  window.addEventListener('resize', resizeHandler)
 })
 
 onUnmounted(() => {
   radarChart?.dispose()
+  if (resizeHandler) window.removeEventListener('resize', resizeHandler)
 })
 </script>
 
 <style scoped>
-.admin-report-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.admin-report-page {
+  min-height: 100%;
+  padding: 24px 28px 40px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(30, 64, 175, 0.06), transparent 40%),
+    radial-gradient(circle at 0% 100%, rgba(217, 33, 33, 0.04), transparent 45%),
+    #f5f7fb;
 }
 
-/* 主内容区 */
-.admin-report-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.breadcrumb {
+/* Topbar */
+.report-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 20px;
-  color: #fff;
+}
+.report-breadcrumb :deep(.el-breadcrumb__inner) {
+  color: #475569;
+  font-weight: 500;
+}
+.report-breadcrumb :deep(.el-breadcrumb__inner:hover) {
+  color: #1e40af;
 }
 
-.breadcrumb :deep(.el-breadcrumb__inner) {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.breadcrumb :deep(.el-breadcrumb__inner:hover) {
-  color: #fff;
-}
-
-.report-wrapper {
+.report-body {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* 卡片样式 */
-.info-card,
-.score-card,
-.chart-card,
-.steps-card,
-.suggestions-card,
-.feedback-card {
-  border-radius: 12px;
+/* ========= Hero ========= */
+.hero-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 32px;
+  padding: 32px 36px;
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(30, 64, 175, 0.95) 0%, rgba(15, 23, 42, 0.92) 100%);
+  color: #fff;
+  overflow: hidden;
+  box-shadow: 0 20px 60px -20px rgba(15, 23, 42, 0.3);
+}
+.hero-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(217, 33, 33, 0.25), transparent 45%),
+    radial-gradient(circle at 10% 90%, rgba(59, 130, 246, 0.3), transparent 40%);
+  pointer-events: none;
+}
+.hero-left,
+.hero-right {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.hero-meta :deep(.el-tag) {
+  border: none;
+  backdrop-filter: blur(6px);
+}
+.hero-id {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #fff !important;
+}
+.hero-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  letter-spacing: 0.5px;
+}
+.hero-subtitle {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  max-width: 520px;
+  line-height: 1.7;
+}
+
+.hero-facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px 32px;
+  margin: 0;
+}
+.fact dt {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+.fact dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fact-icon {
+  opacity: 0.85;
+}
+.fact-strong {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Hero right ring */
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.score-ring {
+  position: relative;
+  width: 200px;
+  height: 200px;
+}
+.ring-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 10;
+}
+.ring-value {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.8s ease-out;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.25));
+}
+.ring-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ring-score {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+.ring-label {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+.hero-level {
+  padding: 0 20px;
+  height: 32px;
+  line-height: 30px;
+  font-size: 14px;
+  font-weight: 600;
   border: none;
 }
 
-.card-header {
+/* ========= Dimension grid ========= */
+.dim-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.dim-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px 22px;
+  border: 1px solid #eef1f6;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.dim-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+.dim-card__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
 }
-
-.card-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-}
-
-/* 评分卡片 */
-.score-cards {
-  margin-top: 0;
-}
-
-.score-card {
-  text-align: center;
-  padding: 20px;
-  transition: transform 0.3s;
-}
-
-.score-card:hover {
-  transform: translateY(-4px);
-}
-
-.score-value {
-  font-size: 36px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.total-score .score-value {
-  color: #409eff;
-}
-
-.score-label {
-  font-size: 14px;
-  color: #909399;
-  margin-bottom: 12px;
-}
-
-.performance-tag {
-  margin-bottom: 12px;
-}
-
-/* 雷达图 */
-.radar-chart {
-  height: 350px;
-}
-
-.empty-state {
+.dim-card__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
-  color: #909399;
+  color: #fff;
+  box-shadow: 0 6px 14px -6px rgba(30, 64, 175, 0.45);
+}
+.dim-card__title {
   font-size: 14px;
-  text-align: center;
+  color: #475569;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.dim-card__value {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.dim-card__unit {
+  font-size: 14px;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-left: 4px;
+}
+.dim-card__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.dim-card__bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+.dim-card__comment {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  min-height: 20px;
 }
 
-/* 步骤列表 */
-.steps-list {
+/* ========= Analysis row ========= */
+.analysis-row {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 20px;
+}
+.analysis-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px 24px;
+  border: 1px solid #eef1f6;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+.section-head {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.step-item {
-  padding: 12px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  transition: background-color 0.3s;
-}
-
-.step-item:hover {
-  background: #ecf5ff;
-}
-
-.step-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px dashed #e5e7eb;
 }
-
-.step-name {
+.section-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 500;
-  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.section-title__icon {
+  color: #1e40af;
+  background: rgba(30, 64, 175, 0.1);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.section-hint {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
-.step-feedback {
-  margin: 8px 0 0 0;
+.radar-chart {
+  height: 360px;
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+.placeholder--inline {
+  padding: 24px 20px;
+}
+
+/* ========= Steps ========= */
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.step-list::-webkit-scrollbar {
+  width: 6px;
+}
+.step-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.step-row {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #eef1f6;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.step-row:hover {
+  background: #f1f5ff;
+  border-color: #c7d2fe;
+}
+.step-row__index {
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #1e40af;
+  font-size: 14px;
+}
+.step-row__body {
+  flex: 1;
+  min-width: 0;
+}
+.step-row__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+.step-row__name {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step-row__score {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.step-row__score-unit {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 2px;
+  font-weight: 500;
+}
+.step-row__bar {
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.step-row__bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+.step-row__feedback {
+  margin: 8px 0 0;
   font-size: 13px;
-  color: #606266;
+  color: #64748b;
   line-height: 1.6;
 }
 
-/* 建议卡片 */
+/* ========= Suggestions ========= */
+.suggestion-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .suggestion-item {
-  margin-bottom: 12px;
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.02));
+  border-left: 3px solid #f59e0b;
+  border-radius: 8px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.suggestion-item__index {
+  flex: 0 0 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.suggestion-item__text {
+  flex: 1;
 }
 
-.suggestion-item:last-child {
-  margin-bottom: 0;
-}
-
-/* 反馈内容 */
+/* ========= Feedback ========= */
 .feedback-content {
+  padding: 16px 18px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #eef1f6;
+  color: #475569;
   line-height: 1.8;
-  color: #606266;
   white-space: pre-wrap;
+  font-size: 14px;
+}
+
+/* ========= Responsive ========= */
+@media (max-width: 1100px) {
+  .hero-card {
+    grid-template-columns: 1fr;
+    padding: 28px;
+  }
+  .hero-right {
+    order: -1;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 24px;
+  }
+  .score-ring {
+    width: 160px;
+    height: 160px;
+  }
+  .ring-score {
+    font-size: 44px;
+  }
+  .analysis-row {
+    grid-template-columns: 1fr;
+  }
+  .dim-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .admin-report-page {
+    padding: 16px;
+  }
+  .hero-facts {
+    grid-template-columns: 1fr;
+  }
+  .dim-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
