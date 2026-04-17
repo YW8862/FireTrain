@@ -218,13 +218,67 @@ def test_update_profile():
     response = client.put(
         "/api/user/profile",
         json={
+            "email": f"updated_{unique_id}@example.com",
             "phone": "13900139000"
         },
         headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 200
     data = response.json()
+    assert data["email"] == f"updated_{unique_id}@example.com"
     assert data["phone"] == "13900139000"
+
+
+def test_update_profile_password():
+    """测试用户可修改自己的密码。"""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
+
+    client.post(
+        "/api/user/register",
+        json={
+            "username": f"pwdchange_{unique_id}",
+            "email": f"pwdchange{unique_id}@example.com",
+            "password": "test123456"
+        }
+    )
+
+    login_response = client.post(
+        "/api/user/login",
+        data={
+            "username": f"pwdchange_{unique_id}",
+            "password": "test123456"
+        }
+    )
+    token = login_response.json()["token"]
+
+    response = client.put(
+        "/api/user/profile",
+        json={
+            "current_password": "test123456",
+            "new_password": "newpass123"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+
+    old_login = client.post(
+        "/api/user/login",
+        data={
+            "username": f"pwdchange_{unique_id}",
+            "password": "test123456"
+        }
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/user/login",
+        data={
+            "username": f"pwdchange_{unique_id}",
+            "password": "newpass123"
+        }
+    )
+    assert new_login.status_code == 200
 
 
 def test_logout():

@@ -175,13 +175,21 @@ class UserService:
         Returns:
             更新后的用户对象
         """
-        # 更新用户字段
-        if user_data.nickname is not None:
-            # 注意：User模型中没有nickname字段，这里可能需要调整
-            pass
-        
+        if user_data.email is not None and user_data.email != user.email:
+            existing_email = await self.user_repo.get_by_email(user_data.email)
+            if existing_email and existing_email.id != user.id:
+                raise ValueError("邮箱已被注册")
+            user.email = user_data.email
+
         if user_data.phone is not None:
             user.phone = user_data.phone
+
+        if user_data.new_password is not None:
+            if not user_data.current_password:
+                raise ValueError("修改密码时必须填写当前密码")
+            if not verify_password(user_data.current_password, user.password_hash):
+                raise ValueError("当前密码不正确")
+            user.password_hash = get_password_hash(user_data.new_password)
         
         # 保存更新
         await self.user_repo.update(user, {})

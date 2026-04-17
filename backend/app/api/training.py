@@ -97,6 +97,46 @@ async def start_training(
         )
 
 
+@router.delete("/{training_id}")
+async def delete_training(
+    training_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id)
+):
+    """
+    删除当前用户自己的未完成训练记录
+    """
+    training_repo = TrainingRepository(db)
+
+    training = await training_repo.get_by_id(training_id)
+    if not training:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="训练记录不存在"
+        )
+
+    if training.user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权操作此训练记录"
+        )
+
+    if training.status == "done":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="已完成训练记录不能取消删除"
+        )
+
+    try:
+        if training.video_path and os.path.exists(training.video_path):
+            os.remove(training.video_path)
+    except OSError as exc:
+        logger.warning("删除训练视频文件失败: %s", exc)
+
+    await training_repo.delete(training)
+    return {"message": "训练记录删除成功", "training_id": training_id}
+
+
 @router.post("/upload")
 async def upload_video(
     request: TrainingUploadRequest,
@@ -186,36 +226,22 @@ async def precheck_training(
             use_pose_analysis=True
         )
         
-        # 使用 analyze_video 分析完整视频，但只检查基本指标
         analysis_result = await run_in_threadpool(
             lambda: inference_service.analyze_video(
                 video_path=training.video_path,
                 training_type=training.training_type
             )
         )
-        
-        # 简单验证：是否检测到任何目标
-        total_detections = analysis_result.get('total_detections', 0)
-        all_detections = analysis_result.get('all_detections', [])
-        
-        # 检查是否检测到灭火器（根据 class_name 判断）
-        extinguisher_detected = any(
-            det.get('class_name') == 'fire_extinguisher' 
-            for det in all_detections
-        )
-        
         inference_service.close()
-        
-        # 快速判断是否有效
-        is_valid = total_detections > 0 and extinguisher_detected
-        reason = "" if is_valid else "未检测到灭火器或训练动作"
-        
-        return {"is_valid": is_valid, "reason": reason}
+
+        validation_result = training_service._validate_detection_result(
+            analysis_result.get("analysis_summary", analysis_result)
+        )
+        return validation_result
         
     except Exception as e:
         print(f"预检测失败：{e}")
-        # 预检测失败不影响提交，返回有效
-        return {"is_valid": True, "reason": ""}
+        return {"is_valid": False, "reason": f"预检测失败：{str(e)}"}
 
 
 @router.post("/upload-file/{training_id}")
@@ -251,7 +277,7 @@ async def upload_video_file(
     try:
         saved_file = await save_upload_file(
             file,
-            "../data/videos",
+            settings.VIDEO_DIR,
         )
         
         # 更新训练记录
@@ -490,4 +516,6 @@ async def get_training_detail(
         actions=None,
         suggestions=(training.step_scores or {}).get("_suggestions", []),
         dimension_scores=(training.step_scores or {}).get("_dimension_scores"),
+        performance_level=(training.step_scores or {}).get("_performance_level"),
+        analysis_summary=(training.step_scores or {}).get("_analysis_summary"),
     )

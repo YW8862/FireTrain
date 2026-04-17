@@ -1,17 +1,24 @@
 <template>
   <div v-if="visible" class="top-nav">
-    <h1 @click="goToHome" class="logo-title">🔥 消防技能训练系统</h1>
+    <div class="brand-block" @click="goToHome">
+      <div class="brand-mark">FT</div>
+      <div>
+        <h1 class="logo-title">灭火器实操训练测评系统</h1>
+        <p class="logo-subtitle">规范操作 · 训练记录 · 实操测评</p>
+      </div>
+    </div>
     <div class="nav-links">
-      <router-link to="/" class="nav-item" active-class="active" exact>首页</router-link>
-      <router-link to="/training" class="nav-item" active-class="active">训练</router-link>
-      <router-link to="/history" class="nav-item" active-class="active">历史</router-link>
-      <router-link to="/stats" class="nav-item" active-class="active">统计</router-link>
+      <div class="nav-tabs">
+        <router-link to="/" class="nav-item" active-class="active" exact>首页</router-link>
+        <router-link to="/training" class="nav-item" active-class="active">实操训练</router-link>
+        <router-link to="/history" class="nav-item" active-class="active">训练记录</router-link>
+        <router-link to="/stats" class="nav-item" active-class="active">统计分析</router-link>
+      </div>
       <el-dropdown @command="handleCommand" class="user-dropdown">
         <span class="user-info">
-          <el-avatar :size="32" icon="UserFilled" />
+          <el-avatar :size="34" icon="UserFilled" class="user-avatar" />
           <span class="user-name">{{ userName }}</span>
-          <!-- 管理员显示角色标签 -->
-          <el-tag v-if="isAdmin" size="small" :type="getRoleType(userStore.effectiveRole)">
+          <el-tag v-if="isAdmin" size="small" :type="getRoleType(userStore.effectiveRole)" effect="plain">
             {{ getRoleLabel(userStore.effectiveRole) }}
           </el-tag>
           <el-icon class="el-icon--right"><arrow-down /></el-icon>
@@ -79,19 +86,9 @@ const isAdmin = computed(() => {
   return role === 'admin' || role === 'root'
 })
 
-// 是否可以切换角色
-const canSwitchRole = computed(() => {
-  return userStore.canSwitchRole
-})
-
 // 是否可以切换回管理员模式（当前是用户模式且有原始角色）
 const canSwitchBack = computed(() => {
   return userStore.viewRole === 'user' && ['admin', 'root'].includes(userStore.userInfo?.role)
-})
-
-// 是否为用户模式
-const isUserMode = computed(() => {
-  return userStore.effectiveRole === 'user'
 })
 
 // 获取角色标签类型
@@ -165,56 +162,86 @@ const handleLogout = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 40px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  gap: 20px;
+  padding: 16px 28px;
+  background: rgba(255, 255, 255, 0.98);
+  border-bottom: 1px solid var(--ft-color-border);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
   position: sticky;
   top: 0;
   z-index: 1000;
 }
 
-.top-nav h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0;
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   cursor: pointer;
-  transition: all 0.3s ease;
 }
 
-.top-nav h1:hover {
-  color: #409EFF;
-  transform: scale(1.02);
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--ft-color-primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .logo-title {
-  cursor: pointer;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ft-color-text-primary);
+}
+
+.logo-subtitle {
+  margin: 4px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 12px;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 24px;
+  justify-content: flex-end;
+  gap: 16px;
+  flex: 1;
+}
+
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--ft-color-border);
+  border-radius: 999px;
+  background: var(--ft-color-surface-muted);
 }
 
 .nav-item {
   text-decoration: none;
-  color: #606266;
-  font-size: 16px;
+  color: var(--ft-color-text-secondary);
+  font-size: 14px;
   font-weight: 500;
-  padding: 8px 16px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  padding: 9px 16px;
+  border-radius: 999px;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .nav-item:hover {
-  background: #f5f7fa;
-  color: #409EFF;
+  background: #fff;
+  color: var(--ft-color-primary);
 }
 
 .nav-item.active {
-  background: #409EFF;
+  background: var(--ft-color-primary);
   color: #fff;
 }
 
@@ -227,45 +254,72 @@ const handleLogout = () => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  border-radius: 999px;
+  border: 1px solid var(--ft-color-border);
+  background: #fff;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .user-info:hover {
-  background: #f5f7fa;
+  background: var(--ft-color-surface-muted);
+  border-color: var(--ft-color-border-strong);
 }
 
 .user-name {
   font-size: 14px;
-  color: #606266;
+  color: var(--ft-color-text-secondary);
   font-weight: 500;
 }
 
+.user-avatar {
+  background: rgba(30, 64, 175, 0.12);
+  color: var(--ft-color-primary);
+}
+
 /* 响应式设计 */
-@media (max-width: 768px) {
+@media (max-width: 960px) {
   .top-nav {
     flex-direction: column;
-    gap: 16px;
+    align-items: stretch;
     padding: 16px;
   }
 
   .nav-links {
-    flex-wrap: wrap;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 12px;
   }
 
-  .top-nav h1 {
-    font-size: 20px;
+  .nav-tabs {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .brand-block {
+    align-items: flex-start;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .logo-title {
+    font-size: 18px;
+  }
+
+  .logo-subtitle {
+    display: none;
   }
 
   .nav-item {
-    font-size: 14px;
-    padding: 6px 12px;
+    text-align: center;
   }
 
-  .user-name {
-    display: none;
+  .user-info {
+    justify-content: center;
   }
 }
 </style>

@@ -1,9 +1,14 @@
 <template>
   <div class="admin-layout">
-    <!-- 顶部导航栏 -->
     <el-header class="admin-header">
       <div class="header-left">
-        <h2>🔥 FireTrain 后台管理</h2>
+        <div class="admin-brand">
+          <div class="admin-brand-mark">FT</div>
+          <div>
+            <h2>FireTrain 后台管理</h2>
+            <p>训练数据、用户信息与视频分析管理</p>
+          </div>
+        </div>
       </div>
       <div class="header-right">
         <el-dropdown @command="handleCommand">
@@ -35,9 +40,7 @@
         <el-menu
           :default-active="activeMenu"
           router
-          background-color="#304156"
-          text-color="#bfcbd9"
-          active-text-color="#409eff"
+          class="admin-menu"
         >
           <el-menu-item index="/admin/dashboard">
             <el-icon><DataLine /></el-icon>
@@ -208,17 +211,43 @@ const handleLogout = async () => {
 
 .admin-header {
   background-color: #fff;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--ft-color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 24px;
+  height: 72px;
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--ft-color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .header-left h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--ft-color-text-primary);
+}
+
+.header-left p {
+  margin: 4px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 12px;
 }
 
 .header-right {
@@ -232,7 +261,8 @@ const handleLogout = async () => {
   gap: 8px;
   cursor: pointer;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--ft-color-border);
   transition: background-color 0.3s;
 }
 
@@ -246,13 +276,27 @@ const handleLogout = async () => {
 }
 
 .admin-sidebar {
-  background-color: #304156;
+  background: #16327d;
   overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .admin-main {
-  background-color: #f0f2f5;
-  padding: 20px;
+  background-color: var(--ft-color-page-bg);
+  padding: 24px;
   overflow-y: auto;
+}
+
+.admin-menu {
+  border-right: 0;
+  --el-menu-bg-color: #16327d;
+  --el-menu-text-color: rgba(255, 255, 255, 0.78);
+  --el-menu-active-color: #ffffff;
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.08);
+}
+
+.admin-menu :deep(.el-menu-item.is-active) {
+  background: rgba(255, 255, 255, 0.14);
+  border-left: 3px solid var(--ft-color-danger);
 }
 </style>

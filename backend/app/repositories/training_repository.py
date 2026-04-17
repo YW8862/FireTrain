@@ -15,9 +15,9 @@ class TrainingRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
     
-    async def create(self, training_data: dict) -> TrainingRecord:
+    async def create(self, training_data: dict | TrainingRecord) -> TrainingRecord:
         """创建训练记录"""
-        training = TrainingRecord(**training_data)
+        training = training_data if isinstance(training_data, TrainingRecord) else TrainingRecord(**training_data)
         self.session.add(training)
         await self.session.flush()  # 获取生成的 ID
         await self.session.refresh(training)
@@ -39,7 +39,11 @@ class TrainingRepository:
         )
         return result.scalars().all()
     
-    async def update(self, training: TrainingRecord, update_data: dict) -> TrainingRecord:
+    async def update(
+        self,
+        training: TrainingRecord,
+        update_data: dict,
+    ) -> TrainingRecord:
         """更新训练记录"""
         for field, value in update_data.items():
             setattr(training, field, value)

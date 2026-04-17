@@ -8,9 +8,6 @@
 """
 import os
 import uuid
-from typing import Optional
-
-from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,10 +19,23 @@ from app.repositories.training_repository import TrainingRepository
 from app.core.config import settings
 from app.services.training_service import TrainingService
 from app.services.upload_service import save_upload_file
-from app.schemas.admin_video import AdminVideoUploadResponse
-from app.models.training_record import TrainingRecord
+from app.schemas.admin_video import AdminVideoStatusResponse, AdminVideoUploadResponse
 
 router = APIRouter(prefix="/api/admin/video", tags=["管理员视频检测"])
+
+
+def _build_status_response(training) -> AdminVideoStatusResponse:
+    step_scores = training.step_scores or {}
+    total_score = float(training.total_score) if training.total_score is not None else None
+    return AdminVideoStatusResponse(
+        training_id=training.id,
+        status=training.status,
+        total_score=total_score,
+        feedback=training.feedback,
+        performance_level=step_scores.get("_performance_level"),
+        analysis_summary=step_scores.get("_analysis_summary"),
+        completed_at=training.completed_at,
+    )
 
 
 @router.post("/upload", response_model=AdminVideoUploadResponse)
@@ -75,7 +85,7 @@ async def admin_upload_video(
     try:
         saved_file = await save_upload_file(
             file,
-            "../data/videos/admin_uploads",
+            settings.ADMIN_VIDEO_DIR,
             filename=unique_filename,
         )
         
@@ -91,14 +101,13 @@ async def admin_upload_video(
     training_repo = TrainingRepository(db)
     training_service = TrainingService(training_repo)
     
-    from app.schemas.training import TrainingStartRequest
     from datetime import datetime
     from decimal import Decimal
     
     # 创建训练记录
     training_data = {
         "user_id": target_user.id,
-        "training_type": training_type,
+        "training_type": training_service._normalize_training_type(training_type),
         "status": "processing",
         "total_score": Decimal("0.00"),
         "video_path": saved_file.file_path,
@@ -123,6 +132,26 @@ async def admin_upload_video(
         status="processing",
         save_duration_ms=saved_file.save_duration_ms,
     )
+
+
+@router.get("/status/{training_id}", response_model=AdminVideoStatusResponse)
+@require_role("admin", "root")
+async def get_admin_video_status(
+    training_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询管理员上传视频的分析状态。"""
+    training_repo = TrainingRepository(db)
+    training = await training_repo.get_by_id(training_id)
+
+    if not training:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="训练记录不存在",
+        )
+
+    return _build_status_response(training)
 
 
 @router.delete("/upload/{training_id}")
@@ -184,8 +213,6 @@ async def process_admin_video_analysis(training_id: int):
     Args:
         training_id: 训练记录 ID
     """
-    from app.ai.training_inference_service import TrainingInferenceService
-    from datetime import datetime
     from app.db.session import async_session_maker
     
     # 在异步任务内部创建新的数据库会话
@@ -194,79 +221,17 @@ async def process_admin_video_analysis(training_id: int):
         training_service = TrainingService(training_repo)
         
         try:
-            # 获取训练记录
-            training = await training_repo.get_by_id(training_id)
-            if not training:
+            print(f"🔄 开始 AI 分析 (训练ID: {training_id})")
+            result = await training_service.complete_training_with_ai_analysis(
+                training_id=training_id,
+                use_ai_scoring=True,
+            )
+            if not result:
                 print(f"❌ 训练记录 {training_id} 不存在")
                 return
-            
-            print(f"🔄 开始 AI 分析 (训练ID: {training_id})")
-            
-            # 初始化 AI 推理服务
-            inference_service = TrainingInferenceService(
-                yolo_model_path=settings.YOLO_MODEL_PATH,
-                yolo_conf_threshold=0.5,
-                use_pose_analysis=True
-            )
-            
-            # 分析视频
-            analysis_result = await run_in_threadpool(
-                lambda: inference_service.analyze_video(
-                    video_path=training.video_path,
-                    training_type=training.training_type
-                )
-            )
-            
-            print(f"✅ AI 分析完成，检测到 {analysis_result.get('total_detections', 0)} 个目标")
-            
-            # 验证检测结果
-            validation_result = training_service._validate_detection_result(analysis_result)
-            
-            if not validation_result['is_valid']:
-                print(f"⚠️ 未检测到有效动作：{validation_result['reason']}")
-                # 生成 0 分结果
-                scoring_result = await training_service._generate_zero_score_result(
-                    training_type=training.training_type,
-                    reason=validation_result['reason']
-                )
-            else:
-                # 使用 LLM 或降级方案评分
-                scoring_result = await training_service._score_with_llm_or_fallback(
-                    analysis_result=analysis_result,
-                    inference_service=inference_service,
-                )
-            
-            inference_service.close()
-            
-            # 更新训练记录
-            from decimal import Decimal
-            
-            update_data = {
-                "status": "done",
-                "total_score": Decimal(str(scoring_result["total_score"])),
-                "step_scores": scoring_result.get("step_scores", {}),
-                "feedback": scoring_result.get("feedback", ""),
-                "completed_at": datetime.utcnow(),
-            }
-            
-            await training_repo.update(training, update_data)
+
             await db.commit()
-            
-            print(f"✅ 训练记录已更新 (ID: {training_id}, 分数: {scoring_result['total_score']})")
-            
-            # 保存动作日志（如果有）
-            if scoring_result.get("action_logs"):
-                from app.repositories.action_log_repository import ActionLogRepository
-                action_log_repo = ActionLogRepository(db)
-                
-                for action_log in scoring_result["action_logs"]:
-                    await action_log_repo.create({
-                        "training_id": training_id,
-                        **action_log
-                    })
-                
-                await db.commit()
-            
+            print(f"✅ 训练记录已更新 (ID: {training_id}, 分数: {result['total_score']})")
             print(f"✅ AI 分析流程完成 (训练ID: {training_id})")
             
         except Exception as e:

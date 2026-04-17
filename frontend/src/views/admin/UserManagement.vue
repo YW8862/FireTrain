@@ -9,13 +9,14 @@
     
     <!-- 搜索和过滤 -->
     <el-card shadow="hover" class="filter-card">
-      <el-form :inline="true" :model="filterForm">
-        <el-form-item label="关键词">
+      <el-form :inline="true" :model="filterForm" @submit.prevent>
+        <el-form-item label="账号信息">
           <el-input
             v-model="filterForm.keyword"
-            placeholder="用户名/邮箱"
+            placeholder="输入用户名或邮箱进行搜索"
             clearable
             style="width: 200px"
+            @keydown.enter.prevent="handleSearch"
           />
         </el-form-item>
         

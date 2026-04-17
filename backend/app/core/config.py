@@ -1,6 +1,20 @@
 """应用配置"""
 import os
+from pathlib import Path
 from typing import List
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+PROJECT_DIR = BACKEND_DIR.parent if BACKEND_DIR.name == "backend" else BACKEND_DIR
+
+
+def _resolve_default_path(env_name: str, default_path: Path) -> str:
+    """读取路径配置，并将相对路径解析为绝对路径。"""
+    configured_path = os.getenv(env_name)
+    raw_path = Path(configured_path) if configured_path else default_path
+    if not raw_path.is_absolute():
+        raw_path = (PROJECT_DIR / raw_path).resolve()
+    return str(raw_path)
 
 
 class Settings:
@@ -32,12 +46,20 @@ class Settings:
     # ===========================================
     # AI 模型和数据路径配置
     # ===========================================
-    MODEL_DIR: str = os.getenv("MODEL_DIR", "../data/models")
-    VIDEO_DIR: str = os.getenv("VIDEO_DIR", "../data/videos")
-    MATPLOTLIB_CACHE_DIR: str = os.getenv("MATPLOTLIB_CACHE_DIR", "../data/matplotlib_cache")
-    
+    DATA_ROOT: str = _resolve_default_path("DATA_ROOT", PROJECT_DIR / "data")
+    MODEL_DIR: str = _resolve_default_path("MODEL_DIR", Path(DATA_ROOT) / "models")
+    VIDEO_DIR: str = _resolve_default_path("VIDEO_DIR", Path(DATA_ROOT) / "videos")
+    ADMIN_VIDEO_DIR: str = _resolve_default_path("ADMIN_VIDEO_DIR", Path(VIDEO_DIR) / "admin_uploads")
+    MATPLOTLIB_CACHE_DIR: str = _resolve_default_path(
+        "MATPLOTLIB_CACHE_DIR",
+        Path(DATA_ROOT) / "matplotlib_cache",
+    )
+
     # YOLO 模型文件路径
-    YOLO_MODEL_PATH: str = os.path.join(MODEL_DIR, "yolov8.onnx")
+    YOLO_MODEL_PATH: str = _resolve_default_path(
+        "YOLO_MODEL_PATH",
+        Path(MODEL_DIR) / "yolov8.onnx",
+    )
 
     # ===========================================
     # 大模型（LLM）评分配置

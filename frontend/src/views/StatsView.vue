@@ -1,13 +1,16 @@
 <template>
-  <div class="stats-container">
-    <!-- 顶部导航栏 -->
+  <div class="app-page stats-page">
     <NavBar />
 
+    <div class="app-shell">
     <el-card class="stats-card">
       <template #header>
         <div class="card-header">
-          <h1>📊 数据统计</h1>
-          <el-button @click="loadData" :loading="loading">刷新</el-button>
+          <div>
+            <h1 class="page-title">训练统计分析</h1>
+            <p class="page-subtitle">查看训练次数、平均得分、趋势变化和各步骤表现。</p>
+          </div>
+          <el-button @click="loadData" :loading="loading">刷新数据</el-button>
         </div>
       </template>
 
@@ -15,17 +18,17 @@
         <!-- 个人统计概览 -->
         <el-row :gutter="20" class="mb-4">
           <el-col :span="6">
-            <el-statistic title="总训练次数" :value="stats.total_training_count">
+            <el-statistic title="训练总次数" :value="stats.total_training_count">
               <template #suffix>次</template>
             </el-statistic>
           </el-col>
           <el-col :span="6">
-            <el-statistic title="平均分数" :value="stats.average_score" :precision="1">
+            <el-statistic title="平均得分" :value="stats.average_score" :precision="1">
               <template #suffix>分</template>
             </el-statistic>
           </el-col>
           <el-col :span="6">
-            <el-statistic title="最佳成绩" :value="stats.best_score" :precision="1">
+            <el-statistic title="最佳得分" :value="stats.best_score" :precision="1">
               <template #suffix>分</template>
             </el-statistic>
           </el-col>
@@ -38,7 +41,7 @@
         <el-card shadow="hover" class="mb-4">
           <template #header>
             <div class="chart-header">
-              <span>📈 成绩趋势（最近 {{ trendDays }} 天）</span>
+              <span>实操得分趋势（最近 {{ trendDays }} 天）</span>
               <el-select v-model="trendDays" size="small" @change="loadTrendData">
                 <el-option label="最近 7 天" :value="7" />
                 <el-option label="最近 15 天" :value="15" />
@@ -54,7 +57,7 @@
           <el-col :span="12">
             <el-card shadow="hover">
               <template #header>
-                <span>📊 步骤分对比</span>
+                <span>各步骤得分分布</span>
               </template>
               <div ref="stepBarChartRef" class="chart-container-small"></div>
             </el-card>
@@ -62,7 +65,7 @@
           <el-col :span="12">
             <el-card shadow="hover">
               <template #header>
-                <span>🎯 能力维度雷达图</span>
+                <span>能力维度概览</span>
               </template>
               <div ref="radarChartRef" class="chart-container-small"></div>
             </el-card>
@@ -73,7 +76,7 @@
         <el-card shadow="hover" v-if="stepAnalysis && stepAnalysis.length > 0">
           <template #header>
             <div class="card-header">
-              <span>📋 各步骤表现分析</span>
+              <span>步骤表现分析</span>
             </div>
           </template>
           <el-table 
@@ -104,6 +107,7 @@
         </el-card>
       </div>
     </el-card>
+    </div>
   </div>
 </template>
 
@@ -188,16 +192,6 @@ const getScoreTagType = (score) => {
 }
 
 // 获取等级标签类型
-const getLevelTagType = (level) => {
-  const types = {
-    excellent: 'success',
-    good: 'success',
-    pass: 'warning',
-    fail: 'danger'
-  }
-  return types[level] || 'info'
-}
-
 // 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return '未训练'
@@ -209,17 +203,6 @@ const formatDate = (dateString) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-// 获取等级文本
-const getLevelText = (level) => {
-  const map = {
-    excellent: '优秀',
-    good: '良好',
-    pass: '合格',
-    fail: '待改进'
-  }
-  return map[level] || '-'
 }
 
 // 加载所有数据
@@ -591,6 +574,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.stats-page {
+  padding-bottom: 24px;
+}
+
 .stats-container {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -612,15 +599,21 @@ onUnmounted(() => {
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding-bottom: 8px;
 }
 
-.card-header h1 {
-  font-size: 28px;
+.page-title {
+  font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ft-color-text-primary);
   margin: 0;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 14px;
 }
 
 .mb-4 {
@@ -714,7 +707,13 @@ onUnmounted(() => {
     padding: 15px;
   }
   
-  .card-header h1 {
+  .card-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+  
+  .page-title {
     font-size: 24px;
   }
   

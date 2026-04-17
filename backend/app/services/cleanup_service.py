@@ -1,7 +1,6 @@
 """清理服务层 - 处理定时清理任务"""
 import asyncio
 import logging
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +52,13 @@ class CleanupService:
 cleanup_service = CleanupService()
 
 
-def setup_cleanup_task(app=None):
+async def setup_cleanup_task(app=None):
     """设置清理任务（供main.py调用）"""
-    # 如果提供了app参数，可以在这里注册后台任务
-    # 但目前我们只是启动清理服务
-    cleanup_service.start_cleanup_task()
+    await cleanup_service.start_cleanup_task()
+    return cleanup_service
+
+
+def stop_cleanup_task(app=None):
+    """停止清理任务（供main.py调用）"""
+    cleanup_service.stop_cleanup_task()
     return cleanup_service

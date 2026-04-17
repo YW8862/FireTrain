@@ -213,9 +213,10 @@ async def update_profile(
     """
     更新当前用户信息
     
-    - **nickname**: 昵称（可选）
+    - **email**: 邮箱（可选）
     - **phone**: 手机号（可选）
-    - **avatar_url**: 头像 URL（可选）
+    - **current_password**: 当前密码（修改密码时必填）
+    - **new_password**: 新密码（可选）
     """
     user_repo = UserRepository(db)
     user_service = UserService(user_repo)

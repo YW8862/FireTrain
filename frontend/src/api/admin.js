@@ -198,3 +198,14 @@ export function updateAdminRole(adminId, role) {
     data: { role }
   })
 }
+
+/**
+ * 查询管理员上传视频的分析状态
+ * @param {number} trainingId - 训练记录ID
+ */
+export function getAdminVideoStatus(trainingId) {
+  return request({
+    url: `/admin/video/status/${trainingId}`,
+    method: 'get'
+  })
+}

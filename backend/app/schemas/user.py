@@ -23,9 +23,10 @@ class UserLoginRequest(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     """用户信息更新请求"""
-    nickname: Optional[str] = Field(None, max_length=50, description="昵称")
+    email: Optional[EmailStr] = Field(None, description="邮箱")
     phone: Optional[str] = Field(None, max_length=20, description="手机号")
-    avatar_url: Optional[str] = Field(None, max_length=255, description="头像 URL")
+    current_password: Optional[str] = Field(None, min_length=6, max_length=50, description="当前密码")
+    new_password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
 
 
 # ============ 响应 Schema ============

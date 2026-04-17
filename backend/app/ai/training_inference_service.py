@@ -1,138 +1,140 @@
-"""训练推理服务
+"""训练推理服务。
 
-整合 YOLOv8 检测和 MediaPipe 姿态分析，对训练视频进行完整分析。
+整合 YOLOv8 检测和 MediaPipe 姿态分析，对灭火器训练视频进行分析、步骤识别与摘要生成。
 """
-import cv2
-import numpy as np
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
+
+from __future__ import annotations
+
+from collections import Counter
 from decimal import Decimal
+from typing import Any, Dict, List
+
+import cv2
 
 from app.ai.fire_extinguisher_detector import FireExtinguisherDetector
+from app.ai.fire_extinguisher_standard import STEP_BY_KEY, STEP_DEFINITIONS, STEP_NAMES
 from app.ai.pose_analyzer import PoseAnalyzer
 from app.core.config import settings
 
 
 class TrainingInferenceService:
-    """训练推理服务
-    
-    对训练视频进行完整的 AI 分析，包括：
-    1. YOLOv8 目标检测（灭火器、人）
-    2. MediaPipe 姿态分析（关键角度）
-    3. 动作识别（6 个标准步骤）
-    4. 时序分析（各步骤用时）
-    """
-    
-    # 灭火器操作 6 个标准步骤
-    STANDARD_STEPS = [
-        "准备阶段",
-        "提灭火器",
-        "拔保险销",
-        "握喷管",
-        "瞄准火源",
-        "压把手"
-    ]
-    
+    """训练推理服务。"""
+
+    STANDARD_STEPS = STEP_NAMES
+
     def __init__(
         self,
-        yolo_model_path: str = None,
+        yolo_model_path: str | None = None,
         yolo_conf_threshold: float = 0.5,
-        use_pose_analysis: bool = True
+        use_pose_analysis: bool = True,
     ):
-        """初始化推理服务
-        
-        Args:
-            yolo_model_path: YOLO 模型路径（默认使用配置中的路径）
-            yolo_conf_threshold: YOLO 置信度阈值
-            use_pose_analysis: 是否启用姿态分析
-        """
         if yolo_model_path is None:
             yolo_model_path = settings.YOLO_MODEL_PATH
-            
+
         self.yolo_detector = FireExtinguisherDetector(
             model_path=yolo_model_path,
-            conf_threshold=yolo_conf_threshold
+            conf_threshold=yolo_conf_threshold,
         )
         self.use_pose_analysis = use_pose_analysis
         self.pose_analyzer = PoseAnalyzer() if use_pose_analysis else None
-    
+
     def analyze_video(
         self,
         video_path: str,
-        training_type: str = "fire_extinguisher"
+        training_type: str = "fire_extinguisher",
     ) -> Dict[str, Any]:
-        """分析训练视频
-        
-        Args:
-            video_path: 视频文件路径
-            training_type: 训练类型
-            
-        Returns:
-            分析结果字典
-        """
+        """分析训练视频并输出统一摘要。"""
         cap = cv2.VideoCapture(video_path)
-        
         if not cap.isOpened():
             raise ValueError(f"无法打开视频：{video_path}")
-        
+
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps if fps > 0 else 0
-        
-        # 存储所有帧的分析结果
-        frame_results = []
-        all_detections = []
-        all_pose_results = []
-        
+
+        frame_results: List[Dict[str, Any]] = []
+        all_detections: List[Dict[str, Any]] = []
+        all_pose_results: List[Dict[str, Any]] = []
+
         frame_idx = 0
         processed_frames = 0
-        
-        # 每隔几帧处理一次（提高速度）
         frame_skip = 1 if total_frames < 300 else 2
-        
+
         while True:
             ret, frame = cap.read()
-            
             if not ret:
                 break
-            
-            # 跳帧处理
+
             if frame_idx % frame_skip == 0:
                 timestamp = frame_idx / fps if fps > 0 else 0
-                
-                # 1. YOLO 目标检测
                 detections = self.yolo_detector.detect_frame(frame)
                 all_detections.extend(detections)
-                
-                # 2. MediaPipe 姿态分析
+
                 pose_result = None
                 if self.use_pose_analysis:
                     pose_result = self.pose_analyzer.analyze_pose(frame, training_type)
                     if pose_result:
                         all_pose_results.append(pose_result)
-                
-                # 3. 保存帧结果
-                frame_results.append({
-                    "frame_idx": frame_idx,
-                    "timestamp": timestamp,
-                    "detections": detections,
-                    "pose_result": pose_result
-                })
-                
+
+                frame_features = self._extract_frame_features(detections, pose_result)
+                frame_results.append(
+                    {
+                        "frame_idx": frame_idx,
+                        "timestamp": timestamp,
+                        "detections": detections,
+                        "pose_result": pose_result,
+                        "frame_features": frame_features,
+                    }
+                )
                 processed_frames += 1
-            
+
             frame_idx += 1
-        
+
         cap.release()
-        
-        # 4. 识别动作步骤
+
         step_sequence = self._recognize_action_sequence(frame_results)
-        
-        # 5. 计算各步骤用时
-        step_times = self._calculate_step_times(frame_results, step_sequence, fps)
-        
-        # 6. 生成分析摘要
+        step_times = self._calculate_step_times(step_sequence, duration)
+        detection_stats = self._summarize_detections(frame_results)
+        pose_stats_summary = self._summarize_pose_stats(all_pose_results)
+        step_feature_summary = self._summarize_steps(step_sequence, frame_results)
+        completed_steps = [step["step_name"] for step in step_sequence if step["is_completed"]]
+        missing_steps = [name for name in self.STANDARD_STEPS if name not in completed_steps]
+        detector_class_names = [
+            class_name
+            for _, class_name in sorted(self.yolo_detector.names.items(), key=lambda item: item[0])
+        ]
+        supports_extinguisher_detection = "fire_extinguisher" in detector_class_names
+
         analysis_summary = {
+            "training_type": training_type,
+            "video_duration": duration,
+            "fps": fps,
+            "total_frames": total_frames,
+            "processed_frames": processed_frames,
+            "extinguisher_detected": detection_stats.get("fire_extinguisher", {}).get("frame_count", 0) > 0,
+            "person_detected": len(all_pose_results) > 0,
+            "has_pose": len(all_pose_results) > 0,
+            "pose_frame_count": len(all_pose_results),
+            "total_detections": len(all_detections),
+            "detector_class_names": detector_class_names,
+            "supports_extinguisher_detection": supports_extinguisher_detection,
+            "detection_stats": detection_stats,
+            "pose_stats_summary": pose_stats_summary,
+            "step_sequence": step_sequence,
+            "step_times": step_times,
+            "step_feature_summary": step_feature_summary,
+            "completed_steps_count": len(completed_steps),
+            "completed_steps": completed_steps,
+            "missing_steps": missing_steps,
+            "validity_checks": {
+                "has_extinguisher": detection_stats.get("fire_extinguisher", {}).get("frame_count", 0) > 0,
+                "has_pose": len(all_pose_results) > 0,
+                "has_step_signal": len(completed_steps) > 0,
+                "duration_ok": duration >= 20,
+            },
+        }
+
+        return {
             "video_duration": duration,
             "total_frames": total_frames,
             "processed_frames": processed_frames,
@@ -140,329 +142,491 @@ class TrainingInferenceService:
             "step_sequence": step_sequence,
             "step_times": step_times,
             "total_detections": len(all_detections),
+            "detector_class_names": detector_class_names,
+            "supports_extinguisher_detection": supports_extinguisher_detection,
             "pose_frame_count": len(all_pose_results),
-            "frame_results": frame_results,  # 详细帧数据
+            "frame_results": frame_results,
             "all_detections": all_detections,
-            "all_pose_results": all_pose_results
+            "all_pose_results": all_pose_results,
+            "detection_stats": detection_stats,
+            "pose_stats_summary": pose_stats_summary,
+            "step_feature_summary": step_feature_summary,
+            "extinguisher_detected": analysis_summary["extinguisher_detected"],
+            "person_detected": analysis_summary["person_detected"],
+            "has_pose": analysis_summary["has_pose"],
+            "completed_steps_count": analysis_summary["completed_steps_count"],
+            "analysis_summary": analysis_summary,
         }
-        
-        return analysis_summary
-    
+
+    async def generate_ai_scores(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """基于统一摘要生成规则评分。"""
+        from app.ai.rule_engine import RuleEngine
+
+        summary = analysis_result.get("analysis_summary", analysis_result)
+        rule_engine = RuleEngine()
+        evaluation_result = await rule_engine.evaluate(summary)
+        evaluation_result["suggestions"] = self.generate_real_suggestions(
+            summary,
+            evaluation_result.get("step_scores", {}),
+        )
+        return evaluation_result
+
+    @staticmethod
     def generate_real_suggestions(
-        self,
         analysis_result: Dict[str, Any],
-        step_scores: Dict[str, Any]
+        step_scores: Dict[str, Any],
     ) -> List[str]:
-        """
-        基于真实 AI 分析数据生成改进建议
-        
-        Args:
-            analysis_result: AI 分析结果（包含检测、姿态等详细数据）
-            step_scores: 步骤分数
-            
-        Returns:
-            真实的改进建议列表
-        """
-        suggestions = []
-        
-        # 1. 基于灭火器检测结果的建议
-        extinguisher_detected = analysis_result.get('extinguisher_detected', False)
-        if not extinguisher_detected:
-            suggestions.append("视频中未检测到灭火器，请确保使用真实灭火器进行训练")
+        """基于真实 AI 分析数据生成改进建议。"""
+        suggestions: List[str] = []
+        detection_stats = analysis_result.get("detection_stats", {})
+        extinguisher_frames = detection_stats.get("fire_extinguisher", {}).get("frame_count", 0)
+        pose_summary = analysis_result.get("pose_stats_summary", {})
+        missing_steps = analysis_result.get("missing_steps", [])
+        step_feature_summary = analysis_result.get("step_feature_summary", {})
+        duration = float(analysis_result.get("video_duration", 0))
+
+        if extinguisher_frames == 0:
+            suggestions.append("视频中未稳定识别到灭火器，请检查取景和模型可见度")
+        elif extinguisher_frames < max(3, int(analysis_result.get("processed_frames", 1) * 0.2)):
+            suggestions.append("灭火器出现帧占比较低，建议让器材始终处于画面关键区域")
+
+        if not analysis_result.get("has_pose"):
+            suggestions.append("未检测到稳定人体姿态，请确保操作者全身进入画面")
         else:
-            all_detections = analysis_result.get('all_detections', [])
-            extinguisher_uses = [d for d in all_detections if d.get('class') == 'fire_extinguisher']
-            
-            if len(extinguisher_uses) < 5:
-                suggestions.append("灭火器使用次数较少，建议增加实际操作练习")
-        
-        # 2. 基于姿态分析的建议
-        all_pose_results = analysis_result.get('all_pose_results', [])
-        if all_pose_results:
-            poor_posture_count = 0
-            specific_issues = set()
-            
-            for pose_data in all_pose_results:
-                angles = pose_data.get('angles', {})
-                
-                right_arm = angles.get('right_arm', 180)
-                left_arm = angles.get('left_arm', 180)
-                
-                if right_arm < 60 or right_arm > 170:
-                    poor_posture_count += 1
-                    specific_issues.add("手臂角度不规范")
-                
-                torso_angle = angles.get('torso', 90)
-                if torso_angle < 70 or torso_angle > 110:
-                    specific_issues.add("身体姿势不稳定")
-            
-            if poor_posture_count > len(all_pose_results) * 0.3:
-                if "手臂角度不规范" in specific_issues:
-                    suggestions.append("注意保持手臂正确角度：提灭火器时手臂自然弯曲约 90 度")
-                if "身体姿势不稳定" in specific_issues:
-                    suggestions.append("保持身体稳定，双脚分开与肩同宽，重心下沉")
-        else:
-            suggestions.append("未检测到人体姿态，请确保全身在摄像头范围内")
-        
-        # 3. 基于步骤完成情况的建议
-        step_sequence = analysis_result.get('step_sequence', [])
-        if len(step_sequence) < 6:
-            completed_steps = {step['step_name'] for step in step_sequence}
-            all_steps = set(self.STANDARD_STEPS)
-            missing_steps = all_steps - completed_steps
-            
-            if missing_steps:
-                suggestions.append(f"未完成所有步骤，缺少：{','.join(missing_steps)}")
-        else:
-            weak_steps = []
-            for step_key, step_data in step_scores.items():
-                if isinstance(step_data, dict) and step_data.get('score', 100) < 75:
-                    weak_steps.append(step_data.get('step_name', step_key))
-            
-            if weak_steps:
-                suggestions.append(f"重点改进步骤：{','.join(weak_steps[:3])}，动作需要更规范")
-        
-        # 4. 基于时长的建议
-        video_duration = analysis_result.get('video_duration', 0)
-        if video_duration < 60:
-            suggestions.append("操作速度较快，注意不要慌乱，确保每个步骤做到位")
-        elif video_duration > 150:
-            suggestions.append("操作时间较长，建议加强熟练度，提高反应速度")
-        elif 90 <= video_duration <= 120:
-            suggestions.append("操作时长适中，节奏控制良好")
-        
-        # 5. 基于检测连续性的建议
-        frame_results = analysis_result.get('frame_results', [])
-        if frame_results:
-            detection_gaps = 0
-            prev_has_detection = True
-            
-            for frame_data in frame_results:
-                has_detection = len(frame_data.get('detections', [])) > 0
-                if not has_detection and prev_has_detection:
-                    detection_gaps += 1
-                prev_has_detection = has_detection
-            
-            if detection_gaps > 3:
-                suggestions.append("操作过程中有中断，建议保持动作连贯性")
-        
-        # 6. 如果没有具体问题，给出鼓励性建议
+            body_mean = pose_summary.get("body", {}).get("mean")
+            right_arm_mean = pose_summary.get("right_arm", {}).get("mean")
+            if body_mean is not None and not 75 <= body_mean <= 105:
+                suggestions.append("身体姿态波动较大，建议保持站姿稳定后再执行操作")
+            if right_arm_mean is not None and not 80 <= right_arm_mean <= 170:
+                suggestions.append("手臂动作幅度异常，建议按标准姿态重新练习抬臂和瞄准")
+
+        if missing_steps:
+            suggestions.append(f"仍有未稳定识别的步骤：{'、'.join(missing_steps[:3])}")
+
+        weak_steps = []
+        for step_key, score_data in step_scores.items():
+            if isinstance(score_data, dict) and float(score_data.get("score", 0)) < 75:
+                weak_steps.append(score_data.get("step_name", step_key))
+        if weak_steps:
+            suggestions.append(f"优先加强步骤：{'、'.join(weak_steps[:3])}")
+
+        for step_key, summary in step_feature_summary.items():
+            if not summary.get("completed"):
+                continue
+            issues = summary.get("issues", [])
+            if issues:
+                suggestions.append(f"{summary['step_name']}需关注：{issues[0]}")
+                break
+
+        if duration < 60:
+            suggestions.append("本次操作偏快，注意不要省略准备、拔销和瞄准环节")
+        elif duration > 150:
+            suggestions.append("本次操作偏慢，建议提升流程熟练度和动作衔接速度")
+
         if not suggestions:
-            total_score = sum(
-                step_data.get('score', 0) 
-                for step_data in step_scores.values() 
-                if isinstance(step_data, dict)
-            ) / max(len(step_scores), 1)
-            
-            if total_score >= 90:
-                suggestions.append("表现优秀！可以担任小教练指导他人")
-                suggestions.append("尝试挑战更快的完成速度（60-90 秒）")
-            elif total_score >= 80:
-                suggestions.append("整体表现良好，继续保持规范操作")
-                suggestions.append("可以适当提高操作流畅度")
-            else:
-                suggestions.append("基本掌握操作流程，继续练习提高熟练度")
-        
-        return suggestions
-    
-    def _recognize_action_sequence(
+            suggestions.append("整体动作较完整，可继续强化压把后的持续扫射稳定性")
+            suggestions.append("建议多进行带场景的重复练习，提升全过程连贯性")
+
+        unique_suggestions: List[str] = []
+        for suggestion in suggestions:
+            if suggestion not in unique_suggestions:
+                unique_suggestions.append(suggestion)
+        return unique_suggestions[:4]
+
+    def _extract_frame_features(
         self,
-        frame_results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """识别动作序列（6 个标准步骤）
-        
-        基于 YOLO 检测结果和 MediaPipe 姿态，识别每个步骤的执行情况。
-        
-        Args:
-            frame_results: 所有帧的分析结果
-            
-        Returns:
-            步骤序列列表
-        """
-        step_sequence = []
-        current_step_idx = 0
-        
-        for i, frame_data in enumerate(frame_results):
-            detections = frame_data["detections"]
-            pose_result = frame_data["pose_result"]
+        detections: List[Dict[str, Any]],
+        pose_result: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        """提取单帧可用于步骤识别的特征。"""
+        extinguisher_detections = [
+            det for det in detections if det.get("class_name") == "fire_extinguisher"
+        ]
+        extinguisher_confidence = max(
+            (det.get("confidence", 0.0) for det in extinguisher_detections),
+            default=0.0,
+        )
+
+        angles = pose_result.get("angles", {}) if pose_result else {}
+        right_arm = angles.get("right_arm")
+        left_arm = angles.get("left_arm")
+        body = angles.get("body")
+        arm_angles = [angle for angle in (right_arm, left_arm) if angle is not None]
+        max_arm = max(arm_angles) if arm_angles else None
+        min_arm = min(arm_angles) if arm_angles else None
+        arm_asymmetry = abs(right_arm - left_arm) if right_arm is not None and left_arm is not None else 0.0
+        stable_body = body is not None and 75 <= body <= 105
+        arm_bent = any(65 <= angle <= 130 for angle in arm_angles)
+        arm_extended = any(angle >= 145 for angle in arm_angles)
+        nozzle_control_posture = bool(
+            extinguisher_detections
+            and len(arm_angles) >= 2
+            and max_arm is not None
+            and min_arm is not None
+            and max_arm >= 110
+            and 60 <= min_arm <= 130
+        )
+        aiming_posture = bool(
+            extinguisher_detections
+            and arm_extended
+            and stable_body
+        )
+        detected_actions = []
+        if extinguisher_detections:
+            detected_actions.append("extinguisher_detected")
+        if pose_result:
+            detected_actions.append("pose_detected")
+        if arm_bent:
+            detected_actions.append("arm_bent")
+        if arm_extended:
+            detected_actions.append("arm_extended")
+        if arm_asymmetry >= 35:
+            detected_actions.append("arm_asymmetry")
+        if nozzle_control_posture:
+            detected_actions.append("nozzle_control")
+        if aiming_posture:
+            detected_actions.append("aiming_posture")
+
+        pose_quality = 0.0
+        if pose_result and pose_result.get("scores"):
+            score_values = [
+                score_item.get("score", 0)
+                for score_item in pose_result["scores"].values()
+                if isinstance(score_item, dict)
+            ]
+            if score_values:
+                pose_quality = sum(score_values) / len(score_values)
+
+        return {
+            "extinguisher_detected": bool(extinguisher_detections),
+            "extinguisher_count": len(extinguisher_detections),
+            "extinguisher_confidence": float(extinguisher_confidence),
+            "pose_available": pose_result is not None,
+            "right_arm": right_arm,
+            "left_arm": left_arm,
+            "body": body,
+            "stable_body": stable_body,
+            "arm_bent": arm_bent,
+            "arm_extended": arm_extended,
+            "arm_asymmetry": arm_asymmetry,
+            "both_arms_visible": len(arm_angles) >= 2,
+            "nozzle_control_posture": nozzle_control_posture,
+            "aiming_posture": aiming_posture,
+            "pose_quality": float(pose_quality),
+            "detected_actions": detected_actions,
+        }
+
+    def _recognize_action_sequence(self, frame_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """使用顺序状态机识别 6 个标准步骤。"""
+        if not frame_results:
+            return []
+
+        expected_step_index = 1
+        current_segment: Dict[str, Any] | None = None
+        step_sequence: List[Dict[str, Any]] = []
+
+        for idx, frame_data in enumerate(frame_results):
             timestamp = frame_data["timestamp"]
-            
-            # 简化的步骤识别逻辑（后续可以改进）
-            # 基于时间和检测结果判断步骤
-            
-            detected_actions = set()
-            for det in detections:
-                class_name = det["class_name"]
-                if class_name == "person":
-                    detected_actions.add("person_detected")
-                # 如果训练了灭火器检测，可以添加：
-                # elif class_name == "fire_extinguisher":
-                #     detected_actions.add("extinguisher_detected")
-            
-            # 基于姿态判断步骤
-            if pose_result and "angles" in pose_result:
-                angles = pose_result["angles"]
-                
-                # 示例：手臂角度判断
-                right_arm_angle = angles.get("right_arm", 180)
-                
-                # 简化的规则：根据角度范围判断步骤
-                if 150 <= right_arm_angle <= 180:
-                    detected_actions.add("arm_raised")
-                elif 90 <= right_arm_angle < 150:
-                    detected_actions.add("arm_bent")
-            
-            # 判断当前步骤
-            if current_step_idx < len(self.STANDARD_STEPS):
-                step_info = {
-                    "step_index": current_step_idx + 1,
-                    "step_name": self.STANDARD_STEPS[current_step_idx],
-                    "start_timestamp": timestamp,
-                    "end_timestamp": timestamp,
-                    "detected_actions": list(detected_actions),
-                    "is_completed": True  # 简化版，假设都完成了
-                }
-                
-                # 如果是第一步，记录开始时间
-                if not step_sequence:
-                    step_info["start_timestamp"] = timestamp
-                
-                # 每 5 秒切换一步（简化逻辑）
-                if step_sequence:
-                    prev_step = step_sequence[-1]
-                    time_diff = timestamp - prev_step["start_timestamp"]
-                    
-                    if time_diff > 5:  # 5 秒后切换到下一步
-                        prev_step["end_timestamp"] = timestamp
-                        current_step_idx = min(current_step_idx + 1, len(self.STANDARD_STEPS) - 1)
-                        step_info["start_timestamp"] = timestamp
-                
-                step_sequence.append(step_info)
-        
-        # 确保最后一步有结束时间
-        if step_sequence and frame_results:
-            step_sequence[-1]["end_timestamp"] = frame_results[-1]["timestamp"]
-        
+            features = frame_data["frame_features"]
+            recent_features = [
+                item["frame_features"]
+                for item in frame_results[max(0, idx - 5): idx + 1]
+            ]
+            candidate_scores = self._score_step_candidates(timestamp, features, recent_features)
+            allowed_steps = {expected_step_index}
+            if expected_step_index < len(STEP_DEFINITIONS):
+                allowed_steps.add(expected_step_index + 1)
+            filtered_scores = {
+                step_idx: score for step_idx, score in candidate_scores.items() if step_idx in allowed_steps
+            }
+            dominant_step, dominant_score = max(
+                filtered_scores.items(),
+                key=lambda item: item[1],
+            )
+            if dominant_score < 0.42:
+                continue
+
+            dominant_step_key = f"step{dominant_step}"
+            dominant_step_definition = STEP_BY_KEY[dominant_step_key]
+
+            if current_segment is None:
+                current_segment = self._create_step_segment(
+                    dominant_step_definition,
+                    timestamp,
+                    dominant_score,
+                    features,
+                )
+                expected_step_index = dominant_step
+                continue
+
+            if dominant_step == current_segment["step_index"]:
+                current_segment = self._extend_step_segment(
+                    current_segment,
+                    timestamp,
+                    dominant_score,
+                    features,
+                )
+                continue
+
+            if dominant_step == current_segment["step_index"] + 1:
+                if self._is_step_segment_valid(current_segment):
+                    step_sequence.append(self._finalize_step_segment(current_segment))
+                current_segment = self._create_step_segment(
+                    dominant_step_definition,
+                    timestamp,
+                    dominant_score,
+                    features,
+                )
+                expected_step_index = dominant_step
+
+        if current_segment and self._is_step_segment_valid(current_segment):
+            step_sequence.append(self._finalize_step_segment(current_segment))
+
         return step_sequence
-    
+
+    def _score_step_candidates(
+        self,
+        timestamp: float,
+        features: Dict[str, Any],
+        recent_features: List[Dict[str, Any]],
+    ) -> Dict[int, float]:
+        """计算当前帧属于各步骤的证据分数。"""
+        extinguisher_score = 1.0 if features["extinguisher_detected"] else 0.0
+        pose_score = 1.0 if features["pose_available"] else 0.0
+        stable_body_score = 1.0 if features["stable_body"] else 0.0
+        arm_bent_score = 1.0 if features["arm_bent"] else 0.0
+        arm_extended_score = 1.0 if features["arm_extended"] else 0.0
+        asymmetry_score = min(features["arm_asymmetry"] / 80.0, 1.0)
+        both_arms_score = 1.0 if features["both_arms_visible"] else 0.0
+        nozzle_control_score = 1.0 if features["nozzle_control_posture"] else 0.0
+        aiming_score = 1.0 if features["aiming_posture"] else 0.0
+        continuity_score = self._recent_extinguisher_ratio(recent_features)
+        motion_score = self._recent_arm_motion_score(recent_features)
+        early_stage_score = 1.0 if timestamp <= 8 else 0.4
+
+        return {
+            1: min(1.0, 0.45 * pose_score + 0.35 * stable_body_score + 0.20 * early_stage_score),
+            2: min(1.0, 0.45 * extinguisher_score + 0.25 * arm_bent_score + 0.20 * stable_body_score + 0.10 * both_arms_score),
+            3: min(1.0, 0.35 * extinguisher_score + 0.25 * asymmetry_score + 0.20 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score),
+            4: min(1.0, 0.35 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.15 * stable_body_score + 0.10 * continuity_score),
+            5: min(1.0, 0.35 * extinguisher_score + 0.25 * aiming_score + 0.20 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score),
+            6: min(1.0, 0.30 * extinguisher_score + 0.20 * aiming_score + 0.20 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score),
+        }
+
+    def _recent_extinguisher_ratio(self, recent_features: List[Dict[str, Any]]) -> float:
+        if not recent_features:
+            return 0.0
+        detected = sum(1 for item in recent_features if item["extinguisher_detected"])
+        return detected / len(recent_features)
+
+    def _recent_arm_motion_score(self, recent_features: List[Dict[str, Any]]) -> float:
+        dominant_arm_values = []
+        for features in recent_features:
+            arm_values = [
+                value for value in (features.get("right_arm"), features.get("left_arm"))
+                if value is not None
+            ]
+            if arm_values:
+                dominant_arm_values.append(max(arm_values))
+        if len(dominant_arm_values) < 2:
+            return 0.0
+        return min((max(dominant_arm_values) - min(dominant_arm_values)) / 35.0, 1.0)
+
+    def _create_step_segment(
+        self,
+        step_definition: Dict[str, Any],
+        timestamp: float,
+        evidence_score: float,
+        features: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "step_key": step_definition["key"],
+            "step_index": step_definition["index"],
+            "step_name": step_definition["name"],
+            "start_timestamp": timestamp,
+            "end_timestamp": timestamp,
+            "evidence_scores": [round(evidence_score, 4)],
+            "frame_count": 1,
+            "detected_actions": set(features["detected_actions"]),
+            "extinguisher_presence_count": 1 if features["extinguisher_detected"] else 0,
+            "pose_quality_values": [features["pose_quality"]] if features["pose_available"] else [],
+            "is_completed": True,
+        }
+
+    def _extend_step_segment(
+        self,
+        segment: Dict[str, Any],
+        timestamp: float,
+        evidence_score: float,
+        features: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        segment["end_timestamp"] = timestamp
+        segment["frame_count"] += 1
+        segment["evidence_scores"].append(round(evidence_score, 4))
+        segment["detected_actions"].update(features["detected_actions"])
+        if features["extinguisher_detected"]:
+            segment["extinguisher_presence_count"] += 1
+        if features["pose_available"]:
+            segment["pose_quality_values"].append(features["pose_quality"])
+        return segment
+
+    def _is_step_segment_valid(self, segment: Dict[str, Any]) -> bool:
+        min_seconds = STEP_BY_KEY[segment["step_key"]]["duration_range"][0] * 0.3
+        duration = segment["end_timestamp"] - segment["start_timestamp"]
+        return segment["frame_count"] >= 2 and duration >= min_seconds
+
+    def _finalize_step_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
+        pose_quality_values = segment.pop("pose_quality_values")
+        avg_pose_quality = (
+            sum(pose_quality_values) / len(pose_quality_values)
+            if pose_quality_values else 0.0
+        )
+        evidence_scores = segment["evidence_scores"]
+        frame_count = max(segment["frame_count"], 1)
+        segment["confidence"] = round(sum(evidence_scores) / len(evidence_scores), 3)
+        segment["peak_confidence"] = round(max(evidence_scores), 3)
+        segment["avg_pose_quality"] = round(avg_pose_quality, 2)
+        segment["extinguisher_presence_ratio"] = round(
+            segment["extinguisher_presence_count"] / frame_count,
+            3,
+        )
+        segment["detected_actions"] = sorted(segment["detected_actions"])
+        segment["key_points"] = STEP_BY_KEY[segment["step_key"]]["key_points"]
+        return segment
+
     def _calculate_step_times(
         self,
-        frame_results: List[Dict[str, Any]],
         step_sequence: List[Dict[str, Any]],
-        fps: float
+        total_duration: float,
     ) -> Dict[str, Decimal]:
-        """计算各步骤用时
-        
-        Args:
-            frame_results: 帧结果列表
-            step_sequence: 步骤序列
-            fps: 视频 FPS
-            
-        Returns:
-            各步骤用时的字典
-        """
-        step_times = {}
-        
-        for step in step_sequence:
-            step_key = f"step{step['step_index']}"
-            start_time = step["start_timestamp"]
-            end_time = step["end_timestamp"]
-            duration = Decimal(str(round(end_time - start_time, 2)))
-            step_times[step_key] = duration
-        
-        # 计算总时间
-        if frame_results:
-            total_time = Decimal(str(round(frame_results[-1]["timestamp"], 2)))
-            step_times["total"] = total_time
-        
+        step_times = {
+            step["step_key"]: Decimal(
+                str(round(step["end_timestamp"] - step["start_timestamp"], 2))
+            )
+            for step in step_sequence
+        }
+        step_times["total"] = Decimal(str(round(total_duration, 2)))
         return step_times
-    
-    def generate_ai_scores(
-        self,
-        analysis_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """基于 AI 分析结果生成评分
-        
-        调用 RuleEngine 综合评分
-        
-        Args:
-            analysis_result: AI 分析结果
-            
-        Returns:
-            评分结果字典
-        """
-        from app.ai.rule_engine import RuleEngine
-        
-        rule_engine = RuleEngine()
-        
-        # 1. 准备动作完整性分数（基于步骤完成情况）
-        action_scores = {"step_scores": {}}
-        for step in analysis_result["step_sequence"]:
-            step_key = f"step{step['step_index']}"
-            action_scores["step_scores"][step_key] = {
-                "step_name": step["step_name"],
-                "score": 100 if step["is_completed"] else 0,
-                "is_completed": step["is_completed"],
-                "duration": float(analysis_result["step_times"].get(step_key, 0))
-            }
-        
-        # 2. 准备姿态规范性分数（基于 MediaPipe）
-        pose_scores = {"step_scores": {}, "frame_count": analysis_result["pose_frame_count"]}
-        
-        if analysis_result["all_pose_results"]:
-            # 计算平均角度
-            angle_sums = {}
-            angle_counts = {}
-            
-            for pose_result in analysis_result["all_pose_results"]:
-                if "angles" in pose_result:
-                    for angle_name, angle_value in pose_result["angles"].items():
-                        if angle_name not in angle_sums:
-                            angle_sums[angle_name] = 0
-                            angle_counts[angle_name] = 0
-                        angle_sums[angle_name] += angle_value
-                        angle_counts[angle_name] += 1
-            
-            avg_angles = {}
-            for angle_name in angle_sums:
-                avg_angles[angle_name] = round(
-                    angle_sums[angle_name] / angle_counts[angle_name],
-                    2
+
+    def _summarize_detections(self, frame_results: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        detection_summary: Dict[str, Dict[str, Any]] = {}
+        for frame_data in frame_results:
+            seen_classes = set()
+            for detection in frame_data["detections"]:
+                class_name = detection.get("class_name", "unknown")
+                summary = detection_summary.setdefault(
+                    class_name,
+                    {
+                        "detection_count": 0,
+                        "frame_count": 0,
+                        "max_confidence": 0.0,
+                        "confidence_sum": 0.0,
+                    },
                 )
-            
-            pose_scores["average_angles"] = avg_angles
-            
-            # 为每个步骤生成姿态分数
-            for i, step in enumerate(analysis_result["step_sequence"]):
-                step_key = f"step{step['step_index']}"
-                pose_scores["step_scores"][step_key] = {
-                    "step_name": step["step_name"],
-                    "score": 85,  # 简化版，给固定分数
-                    "weight": 0.15,
-                    "angles": avg_angles
+                summary["detection_count"] += 1
+                summary["confidence_sum"] += detection.get("confidence", 0.0)
+                summary["max_confidence"] = max(
+                    summary["max_confidence"],
+                    float(detection.get("confidence", 0.0)),
+                )
+                if class_name not in seen_classes:
+                    summary["frame_count"] += 1
+                    seen_classes.add(class_name)
+
+        for summary in detection_summary.values():
+            count = max(summary["detection_count"], 1)
+            summary["average_confidence"] = round(summary["confidence_sum"] / count, 3)
+            summary.pop("confidence_sum", None)
+
+        return detection_summary
+
+    def _summarize_pose_stats(
+        self,
+        all_pose_results: List[Dict[str, Any]],
+    ) -> Dict[str, Dict[str, float]]:
+        angle_data: Dict[str, List[float]] = {}
+        for pose_result in all_pose_results:
+            for angle_name, angle_value in pose_result.get("angles", {}).items():
+                if isinstance(angle_value, (int, float)):
+                    angle_data.setdefault(angle_name, []).append(float(angle_value))
+
+        pose_summary: Dict[str, Dict[str, float]] = {}
+        for angle_name, values in angle_data.items():
+            if not values:
+                continue
+            mean_value = sum(values) / len(values)
+            pose_summary[angle_name] = {
+                "mean": round(mean_value, 2),
+                "min": round(min(values), 2),
+                "max": round(max(values), 2),
+                "count": len(values),
+                "stability": round(max(values) - min(values), 2),
+            }
+        return pose_summary
+
+    def _summarize_steps(
+        self,
+        step_sequence: List[Dict[str, Any]],
+        frame_results: List[Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        step_feature_summary: Dict[str, Dict[str, Any]] = {}
+        for step_definition in STEP_DEFINITIONS:
+            step_key = step_definition["key"]
+            step_entry = next((step for step in step_sequence if step["step_key"] == step_key), None)
+            if not step_entry:
+                step_feature_summary[step_key] = {
+                    "step_name": step_definition["name"],
+                    "completed": False,
+                    "confidence": 0.0,
+                    "duration": 0.0,
+                    "frame_count": 0,
+                    "extinguisher_presence_ratio": 0.0,
+                    "pose_quality_score": 0.0,
+                    "detected_actions": [],
+                    "key_points": step_definition["key_points"],
+                    "issues": ["未稳定识别到该步骤"],
                 }
-        
-        # 3. 获取总用时
-        total_duration = analysis_result["step_times"].get("total")
-        
-        # 4. 调用规则引擎综合评分
-        evaluation_result = rule_engine.evaluate(
-            action_scores=action_scores,
-            pose_scores=pose_scores,
-            duration_seconds=total_duration,
-            step_times=analysis_result["step_times"]
-        )
-        
-        return evaluation_result
+                continue
+
+            matching_frames = [
+                frame for frame in frame_results
+                if step_entry["start_timestamp"] <= frame["timestamp"] <= step_entry["end_timestamp"]
+            ]
+            actions = Counter()
+            for frame in matching_frames:
+                for action in frame["frame_features"]["detected_actions"]:
+                    actions[action] += 1
+
+            issues: List[str] = []
+            if step_entry["extinguisher_presence_ratio"] < 0.5:
+                issues.append("灭火器可见度偏低")
+            if step_entry["avg_pose_quality"] and step_entry["avg_pose_quality"] < 70:
+                issues.append("姿态稳定性不足")
+            if step_entry["confidence"] < 0.55:
+                issues.append("步骤识别置信度偏低")
+
+            step_feature_summary[step_key] = {
+                "step_name": step_definition["name"],
+                "completed": True,
+                "confidence": round(step_entry["confidence"] * 100, 1),
+                "duration": round(step_entry["end_timestamp"] - step_entry["start_timestamp"], 2),
+                "frame_count": step_entry["frame_count"],
+                "extinguisher_presence_ratio": step_entry["extinguisher_presence_ratio"],
+                "pose_quality_score": step_entry["avg_pose_quality"],
+                "detected_actions": [action for action, _ in actions.most_common(4)],
+                "key_points": step_definition["key_points"],
+                "issues": issues,
+            }
+
+        return step_feature_summary
     
     def close(self):
-        """释放资源"""
         if self.pose_analyzer:
             self.pose_analyzer.close()
         self.yolo_detector.close()
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()

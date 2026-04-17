@@ -11,10 +11,15 @@ from app.services.training_service import TrainingService
 
 @pytest.fixture
 def training_repo():
+    async def update(training, update_data):
+        for field, value in update_data.items():
+            setattr(training, field, value)
+        return training
+
     return SimpleNamespace(
         create=AsyncMock(),
         get_by_id=AsyncMock(),
-        update=AsyncMock(),
+        update=AsyncMock(side_effect=update),
         get_user_history=AsyncMock(),
     )
 
@@ -31,7 +36,7 @@ async def test_start_training_creates_training_record(service, training_repo):
     training = await service.start_training(user_id=12, request=request)
 
     assert training.user_id == 12
-    assert training.training_type == "extinguisher"
+    assert training.training_type == "fire_extinguisher"
     assert training.status == "created"
     assert training.duration_seconds == 120
     training_repo.create.assert_awaited_once()
@@ -66,11 +71,17 @@ async def test_upload_video_updates_status_and_path(service, training_repo):
     assert result is training
     assert training.video_path == "/tmp/video.mp4"
     assert training.status == "processing"
-    training_repo.update.assert_awaited_once_with(training)
+    training_repo.update.assert_awaited_once_with(
+        training,
+        {
+            "video_path": "/tmp/video.mp4",
+            "status": "processing",
+        },
+    )
 
 
 @pytest.mark.asyncio
-async def test_complete_training_uses_mock_scoring_when_ai_not_available(
+async def test_complete_training_rejects_missing_video_file(
     service, training_repo, monkeypatch
 ):
     training = SimpleNamespace(
@@ -87,31 +98,13 @@ async def test_complete_training_uses_mock_scoring_when_ai_not_available(
         duration_seconds=None,
     )
     training_repo.get_by_id.return_value = training
-    training_repo.update = AsyncMock()
 
     monkeypatch.setattr("app.services.training_service.os.path.exists", lambda path: False)
-    monkeypatch.setattr(
-        service,
-        "_generate_mock_scoring",
-        lambda: {
-            "total_score": 81.5,
-            "step_scores": {"step_1": 80.0},
-            "feedback": "模拟评分完成",
-            "suggestions": ["继续练习"],
-            "performance_level": "良好",
-            "dimension_scores": {"accuracy": 80.0},
-        },
-    )
 
-    result = await service.complete_training_with_ai_analysis(training_id=1, use_ai_scoring=True)
+    with pytest.raises(ValueError, match="视频文件不存在"):
+        await service.complete_training_with_ai_analysis(training_id=1, use_ai_scoring=True)
 
-    assert result["status"] == "done"
-    assert result["used_ai_scoring"] is False
-    assert result["total_score"] == 81.5
-    assert training.status == "done"
-    assert training.feedback == "模拟评分完成"
-    assert training.duration_seconds is not None
-    training_repo.update.assert_awaited_once_with(training)
+    training_repo.update.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -199,14 +192,14 @@ async def test_complete_training_uses_ai_scoring_when_video_exists(
 
     assert result["used_ai_scoring"] is True
     assert result["total_score"] == 80
-    assert result["scoring_result"]["performance_level"] == "良好"
+    assert result["scoring_result"]["performance_level"] == "good"
     assert training.status == "done"
     assert close_called["value"] is True
-    training_repo.update.assert_awaited_once_with(training)
+    training_repo.update.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_complete_training_falls_back_to_mock_when_ai_raises(
+async def test_complete_training_returns_zero_score_when_ai_analysis_raises(
     service, training_repo, monkeypatch
 ):
     training = SimpleNamespace(
@@ -224,18 +217,6 @@ async def test_complete_training_falls_back_to_mock_when_ai_raises(
     )
     training_repo.get_by_id.return_value = training
     monkeypatch.setattr("app.services.training_service.os.path.exists", lambda path: True)
-    monkeypatch.setattr(
-        service,
-        "_generate_mock_scoring",
-        lambda: {
-            "total_score": 70.0,
-            "step_scores": {"step_1": 70.0},
-            "feedback": "降级评分",
-            "suggestions": ["继续练习"],
-            "performance_level": "良好",
-            "dimension_scores": {"accuracy": 70.0},
-        },
-    )
 
     class FakeTrainingInferenceService:
         def __init__(self, **kwargs):
@@ -256,7 +237,9 @@ async def test_complete_training_falls_back_to_mock_when_ai_raises(
     result = await service.complete_training_with_ai_analysis(training_id=8, use_ai_scoring=True)
 
     assert result["used_ai_scoring"] is False
-    assert result["feedback"] == "降级评分"
+    assert result["total_score"] == 0.0
+    assert "视频分析失败" in result["feedback"]
+    assert result["scoring_result"]["score_source"] == "zero"
 
 
 @pytest.mark.asyncio
@@ -280,3 +263,257 @@ async def test_get_user_training_history_caps_page_size(service, training_repo):
         start_date=None,
         end_date=None,
     )
+
+
+def test_validate_detection_requires_extinguisher_when_model_supports_it(service):
+    result = service._validate_detection_result(
+        {
+            "supports_extinguisher_detection": True,
+            "completed_steps_count": 2,
+            "video_duration": 30,
+            "validity_checks": {
+                "has_extinguisher": False,
+                "has_pose": True,
+                "has_step_signal": True,
+            },
+        }
+    )
+
+    assert result == {"is_valid": False, "reason": "未稳定检测到灭火器"}
+
+
+def test_validate_detection_allows_pose_fallback_when_model_has_no_extinguisher(service):
+    result = service._validate_detection_result(
+        {
+            "supports_extinguisher_detection": False,
+            "completed_steps_count": 2,
+            "video_duration": 30,
+            "validity_checks": {
+                "has_extinguisher": False,
+                "has_pose": True,
+                "has_step_signal": True,
+            },
+        }
+    )
+
+    assert result == {"is_valid": True, "reason": ""}
+
+
+def test_validate_detection_rejects_when_pose_missing(service):
+    result = service._validate_detection_result(
+        {
+            "supports_extinguisher_detection": False,
+            "completed_steps_count": 2,
+            "video_duration": 30,
+            "validity_checks": {
+                "has_extinguisher": False,
+                "has_pose": False,
+                "has_step_signal": True,
+            },
+        }
+    )
+
+    assert result == {"is_valid": False, "reason": "未检测到有效人体姿态"}
+
+
+def test_validate_detection_rejects_when_no_valid_action_signal(service):
+    result = service._validate_detection_result(
+        {
+            "supports_extinguisher_detection": False,
+            "completed_steps_count": 0,
+            "video_duration": 30,
+            "validity_checks": {
+                "has_extinguisher": False,
+                "has_pose": True,
+                "has_step_signal": False,
+            },
+        }
+    )
+
+    assert result == {"is_valid": False, "reason": "未识别到有效步骤特征"}
+
+
+@pytest.mark.asyncio
+async def test_generate_zero_score_result_returns_standard_structure(service):
+    result = await service._generate_zero_score_result(
+        training_type="fire_extinguisher",
+        reason="未识别到有效步骤特征",
+        analysis_result={"analysis_summary": {"completed_steps_count": 0}},
+    )
+
+    assert result["total_score"] == 0.0
+    assert result["performance_level"] == "fail"
+    assert result["score_source"] == "zero"
+    assert result["analysis_summary"]["completed_steps_count"] == 0
+    assert result["suggestions"]
+
+
+@pytest.mark.asyncio
+async def test_score_with_llm_or_fallback_uses_llm_result(service, monkeypatch):
+    baseline_rule_result = {
+        "total_score": 78.0,
+        "performance_level": "pass",
+        "dimension_scores": {"action_completeness": {"score": 80.0}},
+        "step_scores": {"step1": {"score": 80.0}},
+        "feedback": "规则评分反馈",
+    }
+
+    class FakeRuleEngine:
+        async def evaluate(self, summary):
+            return dict(baseline_rule_result)
+
+    class FakeTrainingInferenceService:
+        @staticmethod
+        def generate_real_suggestions(summary, step_scores):
+            return ["规则建议"]
+
+    fake_llm_service = SimpleNamespace(
+        score_training=AsyncMock(
+            return_value={
+                "total_score": 92.0,
+                "performance_level": "excellent",
+                "step_scores": {"step1": {"score": 95.0}},
+                "feedback": "LLM 评分反馈",
+            }
+        )
+    )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "app.ai.rule_engine",
+        types.SimpleNamespace(RuleEngine=FakeRuleEngine),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "app.ai.training_inference_service",
+        types.SimpleNamespace(TrainingInferenceService=FakeTrainingInferenceService),
+    )
+    monkeypatch.setattr(
+        "app.services.training_service.LLMScoringService.from_settings",
+        lambda: fake_llm_service,
+    )
+
+    result = await service._score_with_llm_or_fallback(
+        {
+            "analysis_summary": {
+                "step_feature_summary": {"step1": {"completed": True}},
+                "completed_steps_count": 3,
+            }
+        },
+        allow_llm=True,
+    )
+
+    assert result["score_source"] == "llm"
+    assert result["total_score"] == 92.0
+    assert result["performance_level"] == "excellent"
+    assert result["suggestions"] == ["规则建议"]
+    assert result["dimension_scores"] == baseline_rule_result["dimension_scores"]
+
+
+@pytest.mark.asyncio
+async def test_score_with_llm_or_fallback_falls_back_to_rule_when_llm_fails(service, monkeypatch):
+    baseline_rule_result = {
+        "total_score": 74.0,
+        "performance_level": "pass",
+        "dimension_scores": {"action_completeness": {"score": 76.0}},
+        "step_scores": {"step1": {"score": 72.0}},
+        "feedback": "规则评分反馈",
+    }
+
+    class FakeRuleEngine:
+        async def evaluate(self, summary):
+            return dict(baseline_rule_result)
+
+    class FakeTrainingInferenceService:
+        @staticmethod
+        def generate_real_suggestions(summary, step_scores):
+            return ["规则建议"]
+
+    fake_llm_service = SimpleNamespace(
+        score_training=AsyncMock(side_effect=RuntimeError("llm boom"))
+    )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "app.ai.rule_engine",
+        types.SimpleNamespace(RuleEngine=FakeRuleEngine),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "app.ai.training_inference_service",
+        types.SimpleNamespace(TrainingInferenceService=FakeTrainingInferenceService),
+    )
+    monkeypatch.setattr(
+        "app.services.training_service.LLMScoringService.from_settings",
+        lambda: fake_llm_service,
+    )
+
+    result = await service._score_with_llm_or_fallback(
+        {
+            "analysis_summary": {
+                "step_feature_summary": {"step1": {"completed": True}},
+                "completed_steps_count": 3,
+            }
+        },
+        allow_llm=True,
+    )
+
+    assert result["score_source"] == "rule"
+    assert result["total_score"] == 74.0
+    assert result["feedback"] == "规则评分反馈"
+    assert result["suggestions"] == ["规则建议"]
+
+
+@pytest.mark.asyncio
+async def test_complete_training_returns_zero_score_when_detection_has_no_pose(
+    service, training_repo, monkeypatch
+):
+    training = SimpleNamespace(
+        id=11,
+        user_id=9,
+        training_type="extinguisher",
+        status="processing",
+        video_path="/tmp/demo.mp4",
+        started_at=None,
+        total_score=None,
+        step_scores=None,
+        feedback=None,
+        completed_at=None,
+        duration_seconds=None,
+    )
+    training_repo.get_by_id.return_value = training
+    monkeypatch.setattr("app.services.training_service.os.path.exists", lambda path: True)
+
+    class FakeTrainingInferenceService:
+        def __init__(self, **kwargs):
+            pass
+
+        def analyze_video(self, **kwargs):
+            return {
+                "analysis_summary": {
+                    "supports_extinguisher_detection": False,
+                    "completed_steps_count": 2,
+                    "video_duration": 28,
+                    "validity_checks": {
+                        "has_extinguisher": False,
+                        "has_pose": False,
+                        "has_step_signal": True,
+                    },
+                }
+            }
+
+        def close(self):
+            return None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "app.ai.training_inference_service",
+        types.SimpleNamespace(TrainingInferenceService=FakeTrainingInferenceService),
+    )
+
+    result = await service.complete_training_with_ai_analysis(training_id=11, use_ai_scoring=True)
+
+    assert result["total_score"] == 0.0
+    assert result["used_ai_scoring"] is False
+    assert "未检测到有效人体姿态" in result["feedback"]
+    assert result["scoring_result"]["score_source"] == "zero"

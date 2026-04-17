@@ -1,6 +1,11 @@
 <template>
   <div class="admin-video-upload">
-    <h2 class="page-title">📹 管理员视频检测</h2>
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">管理员视频检测</h2>
+        <p class="page-subtitle">上传训练视频、跟踪分析状态，并将结果归属到指定用户。</p>
+      </div>
+    </div>
     
     <!-- 上传表单 -->
     <el-card shadow="hover" class="upload-card">
@@ -15,9 +20,13 @@
         </el-form-item>
         
         <el-form-item label="训练类型">
-          <el-select v-model="uploadForm.training_type" placeholder="选择训练类型">
-            <el-option label="灭火器训练" value="extinguisher" />
-            <el-option label="其他训练" value="other" />
+          <el-select v-model="uploadForm.training_type" placeholder="选择训练类型" class="training-type-select">
+            <el-option
+              v-for="option in trainingTypeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
         
@@ -51,7 +60,7 @@
             @click="handleUpload"
             :disabled="!uploadForm.username || !selectedFile"
           >
-            {{ uploading ? '视频上传中...' : '开始上传并检测' }}
+            {{ uploading ? '视频上传中...' : '开始上传并分析' }}
           </el-button>
           <el-button 
             v-if="uploading" 
@@ -79,19 +88,36 @@
         closable
         class="upload-result"
       >
-        <div v-if="uploadResult.success" class="result-details">
+          <div v-if="uploadResult.success" class="result-details">
           <p><strong>训练ID：</strong>{{ uploadResult.training_id }}</p>
           <p><strong>目标用户：</strong>{{ uploadResult.username }}</p>
           <p><strong>文件名：</strong>{{ uploadResult.file_name }}</p>
-          <p><strong>状态：</strong>{{ uploadResult.status }}</p>
+            <p><strong>状态：</strong>{{ getStatusLabel(uploadResult.status) }}</p>
           <p><strong>服务端保存耗时：</strong>{{ uploadResult.save_duration_ms }} ms</p>
+            <p v-if="uploadResult.status === 'processing'">
+              <strong>分析进度：</strong>{{ analysisPolling ? '后台分析中，页面会自动刷新状态' : '等待下一次状态刷新' }}
+            </p>
+            <p v-if="uploadResult.status === 'done' && uploadResult.total_score !== null">
+              <strong>总分：</strong>{{ uploadResult.total_score }}
+            </p>
+            <p v-if="uploadResult.feedback">
+              <strong>{{ uploadResult.status === 'failed' ? '失败原因' : '反馈' }}：</strong>{{ uploadResult.feedback }}
+            </p>
           <el-button 
             type="primary" 
             size="small" 
+              :disabled="uploadResult.status !== 'done'"
             @click="viewReport(uploadResult.training_id)"
           >
-            查看报告
+              {{ uploadResult.status === 'done' ? '查看报告' : '分析中...' }}
           </el-button>
+            <el-button
+              v-if="uploadResult.status === 'processing'"
+              size="small"
+              @click="refreshStatus(uploadResult.training_id)"
+            >
+              立即刷新状态
+            </el-button>
         </div>
       </el-alert>
     </el-card>
@@ -100,14 +126,14 @@
     <el-card shadow="hover" class="help-card">
       <template #header>
         <div class="card-header">
-          <span>💡 使用说明</span>
+          <span>使用说明</span>
         </div>
       </template>
       <div class="help-content">
         <h4>功能说明</h4>
         <ul>
           <li>管理员可以上传视频并为指定用户进行检测</li>
-          <li>系统会自动进行 AI 分析，生成完整的训练报告</li>
+          <li>系统会自动进行视频分析，生成完整的训练报告</li>
           <li>检测结果和评分会保存到目标用户的训练历史中</li>
           <li>用户可以像正常训练一样查看报告和改进建议</li>
         </ul>
@@ -117,8 +143,8 @@
           <li>输入目标用户的用户名</li>
           <li>选择训练类型（默认为灭火器训练）</li>
           <li>上传视频文件</li>
-          <li>点击"开始上传并检测"</li>
-          <li>等待 AI 分析完成（通常需要 30-60 秒）</li>
+          <li>点击"开始上传并分析"</li>
+          <li>等待视频分析完成（通常需要 30-60 秒）</li>
           <li>点击查看报告按钮查看完整报告</li>
         </ol>
         
@@ -126,7 +152,7 @@
         <ul>
           <li>确保用户名存在，否则会上传失败</li>
           <li>视频文件不要超过 500MB</li>
-          <li>AI 分析需要一定时间，请耐心等待</li>
+          <li>视频分析需要一定时间，请耐心等待</li>
           <li>如果视频中未检测到有效动作，将返回 0 分</li>
         </ul>
       </div>
@@ -135,19 +161,23 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { DEFAULT_UPLOAD_TIMEOUT, uploadRequest } from '@/api/upload'
+import { getAdminVideoStatus } from '@/api/admin'
+import { TRAINING_TYPE_OPTIONS } from '@/utils/trainingType'
 
 const router = useRouter()
 
 // 上传表单
 const uploadForm = reactive({
   username: '',
-  training_type: 'extinguisher'
+  training_type: 'fire_extinguisher'
 })
+
+const trainingTypeOptions = TRAINING_TYPE_OPTIONS
 
 // 文件相关
 const selectedFile = ref(null)
@@ -156,10 +186,85 @@ const uploadProgress = ref(0)
 const uploadStatus = ref('')
 const uploadStatusText = ref('')
 const uploadResult = ref(null)
+const analysisPolling = ref(false)
 
 // 取消令牌
 let abortController = null
 let uploadStartedAt = 0
+let pollingTimer = null
+const POLL_INTERVAL_MS = 3000
+
+const getStatusLabel = (status) => {
+  const labels = {
+    processing: '分析中',
+    done: '已完成',
+    failed: '失败'
+  }
+  return labels[status] || status
+}
+
+const stopStatusPolling = () => {
+  if (pollingTimer) {
+    clearTimeout(pollingTimer)
+    pollingTimer = null
+  }
+  analysisPolling.value = false
+}
+
+const scheduleNextPoll = (trainingId) => {
+  pollingTimer = window.setTimeout(() => {
+    pollTrainingStatus(trainingId, { silent: true })
+  }, POLL_INTERVAL_MS)
+}
+
+const pollTrainingStatus = async (trainingId, { silent = false } = {}) => {
+  const previousStatus = uploadResult.value?.status
+
+  try {
+    const statusResult = await getAdminVideoStatus(trainingId)
+
+    if (!uploadResult.value || uploadResult.value.training_id !== trainingId) {
+      return
+    }
+
+    uploadResult.value = {
+      ...uploadResult.value,
+      status: statusResult.status,
+      total_score: statusResult.total_score,
+      feedback: statusResult.feedback
+    }
+
+    if (statusResult.status === 'done') {
+      stopStatusPolling()
+      if (previousStatus !== 'done') {
+        ElMessage.success('视频分析已完成，现在可以查看报告')
+      }
+      return
+    }
+
+    if (statusResult.status === 'failed') {
+      stopStatusPolling()
+      if (previousStatus !== 'failed') {
+        ElMessage.error(statusResult.feedback || '视频分析失败，请检查后端日志')
+      }
+      return
+    }
+
+    analysisPolling.value = true
+    scheduleNextPoll(trainingId)
+  } catch (error) {
+    analysisPolling.value = true
+    scheduleNextPoll(trainingId)
+    if (!silent) {
+      ElMessage.warning(error.customMessage || error.response?.data?.detail || '状态刷新失败，稍后会自动重试')
+    }
+  }
+}
+
+const refreshStatus = async (trainingId) => {
+  stopStatusPolling()
+  await pollTrainingStatus(trainingId)
+}
 
 const formatUploadSpeed = (bytesPerSecond) => {
   if (!bytesPerSecond || bytesPerSecond <= 0) return ''
@@ -214,6 +319,7 @@ const handleUpload = async () => {
   uploadStatus.value = ''
   uploadStatusText.value = '准备上传...'
   uploadResult.value = null
+  stopStatusPolling()
   
   // 创建取消控制器
   abortController = new AbortController()
@@ -251,7 +357,7 @@ const handleUpload = async () => {
     
     uploadProgress.value = 100
     uploadStatus.value = 'success'
-    uploadStatusText.value = '上传完成，后台正在进行 AI 分析...'
+    uploadStatusText.value = '上传完成，后台正在进行视频分析...'
     
     uploadResult.value = {
       success: true,
@@ -260,10 +366,13 @@ const handleUpload = async () => {
       username: response.username,
       file_name: response.file_name,
       status: response.status,
-      save_duration_ms: response.save_duration_ms
+      save_duration_ms: response.save_duration_ms,
+      total_score: null,
+      feedback: ''
     }
     
-    ElMessage.success('视频上传成功，AI 正在分析中...')
+    ElMessage.success('视频上传成功，结果分析已开始')
+    await pollTrainingStatus(response.training_id, { silent: true })
     
     // 清空表单
     resetForm()
@@ -332,6 +441,7 @@ const handleCancel = async () => {
     }
     
     // 重置状态
+    stopStatusPolling()
     uploading.value = false
     uploadStatus.value = 'warning'
     uploadStatusText.value = '上传已取消'
@@ -350,7 +460,7 @@ const handleCancel = async () => {
 // 重置表单
 const resetForm = () => {
   uploadForm.username = ''
-  uploadForm.training_type = 'extinguisher'
+  uploadForm.training_type = 'fire_extinguisher'
   selectedFile.value = null
   uploadProgress.value = 0
   uploadStatus.value = ''
@@ -359,8 +469,16 @@ const resetForm = () => {
 
 // 查看报告
 const viewReport = (trainingId) => {
-  router.push(`/report/${trainingId}`)
+  if (uploadResult.value?.status !== 'done') {
+    ElMessage.warning('视频分析尚未完成，请等待状态变为“已完成”后再查看报告')
+    return
+  }
+  router.push(`/admin/report/${trainingId}`)
 }
+
+onUnmounted(() => {
+  stopStatusPolling()
+})
 </script>
 
 <style scoped>
@@ -372,9 +490,19 @@ const viewReport = (trainingId) => {
 
 .page-title {
   font-size: 24px;
-  font-weight: bold;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ft-color-text-primary);
+}
+
+.page-header {
   margin-bottom: 20px;
-  color: #303133;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 14px;
 }
 
 .upload-card {
@@ -394,6 +522,11 @@ const viewReport = (trainingId) => {
 .upload-demo {
   width: 100%;
 }
+
+.training-type-select {
+  width: 100%;
+}
+
 
 .upload-progress {
   margin-top: 20px;

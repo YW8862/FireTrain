@@ -1,140 +1,69 @@
-"""LLM 评分服务
+"""LLM 评分服务。"""
 
-通过调用外部大模型 API（兼容 OpenAI 格式），基于预定义的灭火器操作规程评分规则，
-对训练视频分析结果进行 AI 评分并生成改进建议。
-"""
+from __future__ import annotations
+
 import json
 import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.ai.fire_extinguisher_standard import DIMENSION_WEIGHTS, STEP_DEFINITIONS, get_performance_level
+
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# 系统提示词（灭火器操作 6 步标准评分规则）
-# ============================================================
-SCORING_SYSTEM_PROMPT = """你是专业的消防安全培训评估专家，拥有丰富的灭火器操作培训和考核经验。
 
-你的任务是：根据学员训练数据（视频分析结果），严格按照下面的【评分规则】对学员的灭火器操作进行评分，并给出针对性的改进建议。
+def _build_scoring_system_prompt() -> str:
+    step_descriptions = []
+    for step in STEP_DEFINITIONS:
+        step_descriptions.append(
+            f"▶ {step['key']} {step['name']}（权重 {int(step['weight'] * 100)}%）："
+            f"{'；'.join(step['key_points'])}"
+        )
 
-══════════════════════════════════════════
-【灭火器操作标准规程与评分规则】
-══════════════════════════════════════════
+    return f"""你是专业的消防实操评估教官，需要根据结构化视频分析摘要对学员的灭火器操作进行评分。
 
-▶ 步骤1：准备阶段（权重 15%）
-  标准要求：发现火情后，迅速判断火源位置，以正确姿势站立准备，目视火源方向。
-  - 优秀（90-100分）：立即作出反应，站姿端正，目视前方，无犹豫
-  - 良好（75-89分）：反应较快，站姿基本正确
-  - 合格（60-74分）：能完成准备，但反应迟缓或姿势略差
-  - 不合格（0-59分）：反应明显迟缓，站姿不规范
+请严格依据输入证据评分，不要臆造视频中不存在的画面细节。你会收到：
+1. 视频基础摘要
+2. 检测与姿态统计
+3. 每个步骤的完成情况、置信度、时长、问题点
+4. 规则引擎给出的基线分
 
-▶ 步骤2：提灭火器（权重 20%）
-  标准要求：双手或单手握住灭火器筒体把手，平稳提起，保持灭火器竖直。
-  - 优秀（90-100分）：握持方式正确，动作流畅，灭火器始终竖直
-  - 良好（75-89分）：握法基本正确，灭火器基本竖直
-  - 合格（60-74分）：能提起灭火器，但姿势不够规范或有倾斜
-  - 不合格（0-59分）：握持方式错误，或灭火器明显倾斜
+统一训练步骤如下：
+{chr(10).join(step_descriptions)}
 
-▶ 步骤3：拔保险销（权重 15%）
-  标准要求：一手持灭火器，另一手食指插入保险环，用力将保险销笔直拔出。
-  - 优秀（90-100分）：动作准确，一次拔出，拔销方向正确
-  - 良好（75-89分）：操作正确，一次完成，稍有停顿
-  - 合格（60-74分）：能拔出保险销，但费力或多次尝试
-  - 不合格（0-59分）：未能正确拔出，或操作方式明显错误
+评分维度与权重：
+- 动作完整性：{DIMENSION_WEIGHTS['action_completeness']}
+- 姿态规范性：{DIMENSION_WEIGHTS['pose_standardization']}
+- 操作时效性：{DIMENSION_WEIGHTS['timeliness']}
 
-▶ 步骤4：握喷管（权重 15%）
-  标准要求：一手握住喷管距喷嘴约 20-30 cm 处（避免冻伤），对准火源方向。
-  - 优秀（90-100分）：握持位置正确，喷嘴指向准确，手腕稳定
-  - 良好（75-89分）：握持基本正确，方向大致准确
-  - 合格（60-74分）：能握喷管，但握持位置或方向有偏差
-  - 不合格（0-59分）：握持方式错误（如握近喷嘴）或方向明显偏差
+请输出严格 JSON，不要输出 JSON 以外的内容：
+{{
+  "total_score": <0-100 的浮点数，保留 1 位小数>,
+  "performance_level": "<excellent|good|pass|fail>",
+  "dimension_scores": {{
+    "action_completeness": {{"score": <0-100>, "weight": {DIMENSION_WEIGHTS['action_completeness']}, "comment": "<30字以内>"}},
+    "pose_standardization": {{"score": <0-100>, "weight": {DIMENSION_WEIGHTS['pose_standardization']}, "comment": "<30字以内>"}},
+    "timeliness": {{"score": <0-100>, "weight": {DIMENSION_WEIGHTS['timeliness']}, "comment": "<30字以内>"}}
+  }},
+  "step_scores": {{
+    "step1": {{"step_name": "准备阶段", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.15}},
+    "step2": {{"step_name": "提灭火器", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.20}},
+    "step3": {{"step_name": "拔保险销", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.15}},
+    "step4": {{"step_name": "握喷管", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.15}},
+    "step5": {{"step_name": "瞄准火源", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.20}},
+    "step6": {{"step_name": "压把手", "score": <0-100>, "is_correct": <true|false>, "feedback": "<20字以内>", "weight": 0.15}}
+  }},
+  "feedback": "<100字以内整体评价>",
+  "suggestions": ["<建议1>", "<建议2>", "<建议3>"]
+}}"""
 
-▶ 步骤5：瞄准火源（权重 20%）
-  标准要求：双脚分开与肩同宽，重心略低，手臂自然伸展，喷嘴对准火焰根部，与火源保持 3-5 米安全距离。
-  - 优秀（90-100分）：站姿稳定，瞄准精确（指向火焰根部），距离合适
-  - 良好（75-89分）：瞄准基本正确，姿态较稳
-  - 合格（60-74分）：能对准大致方向，但姿态或距离有明显偏差
-  - 不合格（0-59分）：未对准火焰根部，或距离不当，存在安全隐患
 
-▶ 步骤6：压把手（权重 15%）
-  标准要求：用力均匀向下压灭火器把手，对准火焰根部来回扫射，直至火焰完全熄灭，手指不要覆盖喷嘴。
-  - 优秀（90-100分）：压力均匀，扫射动作规范，持续有效操作至灭火
-  - 良好（75-89分）：操作基本正确，扫射动作较规范
-  - 合格（60-74分）：能压下把手，但扫射不规范或持续时间不足
-  - 不合格（0-59分）：操作方式错误，或未能进行有效扫射
-
-══════════════════════════════════════════
-【整体评分维度权重】
-══════════════════════════════════════════
-1. 动作完整性（40%）：6个步骤是否全部完成，各步骤执行质量
-2. 姿态规范性（40%）：手臂角度、身体姿态是否符合标准
-3. 操作时效性（20%）：总操作时间是否在合理范围（60-150秒）
-
-【时效性评分参考】
-- 60-90秒：优秀（反应迅速且动作规范）
-- 90-120秒：良好（节奏适中）
-- 120-150秒：合格（偏慢但完成操作）
-- <60秒：需关注（过快可能遗漏步骤）
-- >150秒：不合格（操作时间过长）
-
-【总分计算】
-total_score = 动作完整性得分 × 0.4 + 姿态规范性得分 × 0.4 + 操作时效性得分 × 0.2
-
-【等级划分】
-- 优秀：≥ 90分
-- 良好：80-89分
-- 合格：60-79分
-- 不合格：< 60分
-
-══════════════════════════════════════════
-【输出格式要求】
-══════════════════════════════════════════
-请严格按照以下 JSON 格式输出，不要输出任何 JSON 以外的内容，不要添加 markdown 代码块标记：
-
-{
-  "total_score": <0-100的浮点数，保留一位小数>,
-  "performance_level": "<excellent|good|pass|fail 之一>",
-  "dimension_scores": {
-    "action_completeness": {
-      "score": <0-100的整数>,
-      "weight": 0.4,
-      "comment": "<30字以内的维度评语>"
-    },
-    "pose_standardization": {
-      "score": <0-100的整数>,
-      "weight": 0.4,
-      "comment": "<30字以内的维度评语>"
-    },
-    "timeliness": {
-      "score": <0-100的整数>,
-      "weight": 0.2,
-      "comment": "<30字以内的维度评语>"
-    }
-  },
-  "step_scores": {
-    "step1": {"step_name": "准备阶段", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.15},
-    "step2": {"step_name": "提灭火器", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.20},
-    "step3": {"step_name": "拔保险销", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.15},
-    "step4": {"step_name": "握喷管", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.15},
-    "step5": {"step_name": "瞄准火源", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.20},
-    "step6": {"step_name": "压把手", "score": <0-100的整数>, "is_correct": <true|false>, "feedback": "<20字以内的具体反馈>", "weight": 0.15}
-  },
-  "feedback": "<100字以内的整体评价，指出主要优点和不足>",
-  "suggestions": [
-    "<针对性改进建议1，30字以内>",
-    "<针对性改进建议2，30字以内>",
-    "<针对性改进建议3，30字以内>"
-  ]
-}"""
+SCORING_SYSTEM_PROMPT = _build_scoring_system_prompt()
 
 
 class LLMScoringService:
-    """大模型评分服务
-
-    通过外部大模型 API（兼容 OpenAI 格式）对训练数据进行评分。
-    支持 OpenAI、DeepSeek、Qwen（通义千问）、Zhipu AI（智谱）等兼容接口。
-    """
+    """通过外部大模型 API 对训练数据进行评分。"""
 
     def __init__(
         self,
@@ -143,22 +72,6 @@ class LLMScoringService:
         model: str = "gpt-4o-mini",
         timeout: float = 60.0,
     ):
-        """初始化 LLM 评分服务
-
-        Args:
-            api_key: API 密钥
-            base_url: API 基础 URL（OpenAI 兼容格式）
-                - OpenAI:  https://api.openai.com/v1
-                - DeepSeek: https://api.deepseek.com/v1
-                - Qwen:     https://dashscope.aliyuncs.com/compatible-mode/v1
-                - Zhipu:    https://open.bigmodel.cn/api/paas/v4
-            model: 模型名称
-                - OpenAI:   gpt-4o-mini / gpt-4o
-                - DeepSeek: deepseek-chat
-                - Qwen:     qwen-turbo / qwen-plus / qwen-max
-                - Zhipu:    glm-4-flash / glm-4
-            timeout: 请求超时时间（秒）
-        """
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -166,170 +79,89 @@ class LLMScoringService:
 
     async def score_training(
         self,
-        analysis_result: Dict[str, Any]
+        analysis_result: Dict[str, Any],
+        baseline_score: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """基于 AI 视频分析结果，调用大模型进行评分
-
-        Args:
-            analysis_result: TrainingInferenceService.analyze_video() 返回的分析结果
-
-        Returns:
-            评分结果字典，包含：
-            - total_score: 总分
-            - performance_level: 等级
-            - dimension_scores: 三维度分数
-            - step_scores: 6步骤分数
-            - feedback: 整体评价
-            - suggestions: 改进建议列表
-
-        Raises:
-            RuntimeError: 调用 LLM API 失败
-        """
-        # 构建用户提示词（将分析数据格式化为可读文本）
-        user_prompt = self._build_user_prompt(analysis_result)
-
-        # 调用 LLM API
+        user_prompt = self._build_user_prompt(analysis_result, baseline_score)
         raw_response = await self._call_llm(user_prompt)
+        return self._parse_llm_response(raw_response)
 
-        # 解析并验证 JSON 响应
-        scoring_result = self._parse_llm_response(raw_response)
+    def _build_user_prompt(
+        self,
+        analysis_result: Dict[str, Any],
+        baseline_score: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        summary = analysis_result.get("analysis_summary", analysis_result)
+        detection_stats = summary.get("detection_stats", {})
+        pose_stats_summary = summary.get("pose_stats_summary", {})
+        step_feature_summary = summary.get("step_feature_summary", {})
 
-        return scoring_result
+        detection_lines = [
+            f"- {class_name}: frame_count={stats.get('frame_count', 0)}, "
+            f"detection_count={stats.get('detection_count', 0)}, "
+            f"average_confidence={stats.get('average_confidence', 0)}"
+            for class_name, stats in detection_stats.items()
+        ]
 
-    def _build_user_prompt(self, analysis_result: Dict[str, Any]) -> str:
-        """将视频分析结果格式化为 LLM 可理解的描述文本
+        pose_lines = [
+            f"- {angle_name}: mean={stats.get('mean', 0)}, min={stats.get('min', 0)}, "
+            f"max={stats.get('max', 0)}, stability={stats.get('stability', 0)}"
+            for angle_name, stats in pose_stats_summary.items()
+        ]
 
-        Args:
-            analysis_result: 视频分析结果
-
-        Returns:
-            格式化的用户提示词
-        """
-        duration = analysis_result.get("video_duration", 0)
-        total_detections = analysis_result.get("total_detections", 0)
-        pose_frame_count = analysis_result.get("pose_frame_count", 0)
-        processed_frames = analysis_result.get("processed_frames", 0)
-        step_sequence = analysis_result.get("step_sequence", [])
-        step_times = analysis_result.get("step_times", {})
-        all_pose_results = analysis_result.get("all_pose_results", [])
-
-        # 计算姿态角度统计
-        pose_stats = self._compute_pose_stats(all_pose_results)
-
-        # 步骤完成情况
-        completed_steps = len([s for s in step_sequence if s.get("is_completed", False)])
-        step_detail_lines = []
-        seen_steps = set()
-        for step in step_sequence:
-            step_name = step.get("step_name", "")
-            if step_name in seen_steps:
-                continue
-            seen_steps.add(step_name)
-            step_idx = step.get("step_index", 0)
-            step_key = f"step{step_idx}"
-            duration_val = step_times.get(step_key, 0)
-            is_done = step.get("is_completed", False)
-            step_detail_lines.append(
-                f"  - {step_name}：{'已完成' if is_done else '未完成'}，"
-                f"耗时 {float(duration_val):.1f} 秒"
+        step_lines = []
+        for step in STEP_DEFINITIONS:
+            step_data = step_feature_summary.get(step["key"], {})
+            step_lines.append(
+                f"- {step['name']}: completed={step_data.get('completed', False)}, "
+                f"confidence={step_data.get('confidence', 0)}, duration={step_data.get('duration', 0)}, "
+                f"pose_quality_score={step_data.get('pose_quality_score', 0)}, "
+                f"extinguisher_presence_ratio={step_data.get('extinguisher_presence_ratio', 0)}, "
+                f"detected_actions={step_data.get('detected_actions', [])}, "
+                f"issues={step_data.get('issues', [])}"
             )
 
-        step_detail_text = "\n".join(step_detail_lines) if step_detail_lines else "  - 未检测到有效步骤"
+        baseline_text = (
+            json.dumps(
+                {
+                    "total_score": baseline_score.get("total_score"),
+                    "performance_level": baseline_score.get("performance_level"),
+                    "dimension_scores": baseline_score.get("dimension_scores"),
+                    "step_scores": baseline_score.get("step_scores"),
+                },
+                ensure_ascii=False,
+            )
+            if baseline_score
+            else "未提供规则基线分"
+        )
 
-        # 姿态分析文本
-        pose_lines = []
-        if pose_stats:
-            if "right_arm" in pose_stats:
-                pose_lines.append(
-                    f"  - 右臂角度：平均 {pose_stats['right_arm']['mean']:.1f}°，"
-                    f"范围 {pose_stats['right_arm']['min']:.1f}°-{pose_stats['right_arm']['max']:.1f}°"
-                    f"（标准范围：提灭火器时约 90°，瞄准时约 150-180°）"
-                )
-            if "left_arm" in pose_stats:
-                pose_lines.append(
-                    f"  - 左臂角度：平均 {pose_stats['left_arm']['mean']:.1f}°，"
-                    f"范围 {pose_stats['left_arm']['min']:.1f}°-{pose_stats['left_arm']['max']:.1f}°"
-                )
-            if "body" in pose_stats or "torso" in pose_stats:
-                key = "body" if "body" in pose_stats else "torso"
-                pose_lines.append(
-                    f"  - 身体姿态角度：平均 {pose_stats[key]['mean']:.1f}°"
-                    f"（标准直立约 80-100°）"
-                )
-            if "right_knee" in pose_stats:
-                pose_lines.append(
-                    f"  - 右膝角度：平均 {pose_stats['right_knee']['mean']:.1f}°"
-                )
-        pose_text = "\n".join(pose_lines) if pose_lines else "  - 姿态数据不足，无法详细分析"
+        return f"""请根据以下灭火器训练摘要进行评分：
 
-        prompt = f"""请根据以下学员灭火器操作训练数据进行评分：
+【基础摘要】
+- video_duration={summary.get('video_duration', 0)}
+- processed_frames={summary.get('processed_frames', 0)}
+- pose_frame_count={summary.get('pose_frame_count', 0)}
+- extinguisher_detected={summary.get('extinguisher_detected', False)}
+- person_detected={summary.get('person_detected', False)}
+- completed_steps_count={summary.get('completed_steps_count', 0)}
+- completed_steps={summary.get('completed_steps', [])}
+- missing_steps={summary.get('missing_steps', [])}
 
-【基本信息】
-- 视频总时长：{duration:.1f} 秒
-- 检测到的目标总数：{total_detections} 个
-- 姿态分析帧数：{pose_frame_count} 帧（共处理 {processed_frames} 帧）
-- 完成步骤数：{completed_steps} / 6 步
+【检测统计】
+{chr(10).join(detection_lines) if detection_lines else '- 无检测数据'}
 
-【步骤完成详情】
-{step_detail_text}
+【姿态统计】
+{chr(10).join(pose_lines) if pose_lines else '- 无姿态统计'}
 
-【姿态分析数据】
-{pose_text}
+【步骤级证据】
+{chr(10).join(step_lines)}
 
-【时效性分析】
-- 总操作时长：{duration:.1f} 秒
-- 标准时长范围：60-150 秒
-- 评价：{'操作过快，可能遗漏步骤' if duration < 60 else ('操作时间合理' if duration <= 150 else '操作时间过长，需加强熟练度')}
+【规则引擎基线分】
+{baseline_text}
 
-请严格按照要求的 JSON 格式输出评分结果，不要输出任何额外内容。"""
-
-        return prompt
-
-    def _compute_pose_stats(
-        self,
-        all_pose_results: List[Dict[str, Any]]
-    ) -> Dict[str, Dict[str, float]]:
-        """计算姿态角度的统计信息（均值、最小值、最大值）
-
-        Args:
-            all_pose_results: 所有帧的姿态分析结果
-
-        Returns:
-            各角度的统计信息字典
-        """
-        if not all_pose_results:
-            return {}
-
-        angle_data: Dict[str, List[float]] = {}
-        for pose in all_pose_results:
-            angles = pose.get("angles", {})
-            for angle_name, angle_value in angles.items():
-                if isinstance(angle_value, (int, float)):
-                    angle_data.setdefault(angle_name, []).append(float(angle_value))
-
-        stats = {}
-        for angle_name, values in angle_data.items():
-            if values:
-                stats[angle_name] = {
-                    "mean": sum(values) / len(values),
-                    "min": min(values),
-                    "max": max(values),
-                    "count": len(values),
-                }
-        return stats
+请基于证据输出最终 JSON 评分结果。"""
 
     async def _call_llm(self, user_prompt: str) -> str:
-        """调用 LLM API（OpenAI Chat Completions 格式）
-
-        Args:
-            user_prompt: 用户消息内容
-
-        Returns:
-            模型的回复文本
-
-        Raises:
-            RuntimeError: API 调用失败
-        """
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -341,7 +173,7 @@ class LLMScoringService:
                 {"role": "system", "content": SCORING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.2,  # 低温度，确保输出稳定
+            "temperature": 0.2,
             "max_tokens": 1500,
         }
 
@@ -366,22 +198,9 @@ class LLMScoringService:
             raise RuntimeError(f"LLM API 调用异常：{str(e)}")
 
     def _parse_llm_response(self, raw_response: str) -> Dict[str, Any]:
-        """解析 LLM 返回的 JSON 评分结果，并做容错处理
-
-        Args:
-            raw_response: LLM 返回的原始文本
-
-        Returns:
-            解析后的评分结果字典
-
-        Raises:
-            RuntimeError: JSON 解析失败
-        """
-        # 去除可能的 markdown 代码块标记
         text = raw_response.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            # 去掉第一行（```json 或 ```）和最后一行（```）
             text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
         text = text.strip()
 
@@ -391,16 +210,16 @@ class LLMScoringService:
             logger.error(f"LLM 响应 JSON 解析失败：{e}\n原始内容：{raw_response[:500]}")
             raise RuntimeError(f"LLM 返回格式错误，无法解析评分结果：{str(e)}")
 
-        # 验证必要字段
         required_fields = ["total_score", "performance_level", "step_scores", "feedback", "suggestions"]
         for field in required_fields:
             if field not in result:
                 raise RuntimeError(f"LLM 返回结果缺少必要字段：{field}")
 
-        # 确保数值类型正确
         result["total_score"] = float(result["total_score"])
+        performance = self._normalize_performance_level(result.get("performance_level"))
+        result["performance_level"] = performance["code"]
+        result["performance_label"] = performance["label"]
 
-        # 确保 step_scores 中每个步骤都有 is_correct 字段
         step_scores = result.get("step_scores", {})
         for step_key, step_data in step_scores.items():
             if isinstance(step_data, dict):
@@ -409,19 +228,37 @@ class LLMScoringService:
                 if "is_correct" not in step_data:
                     step_data["is_correct"] = score >= 60
 
-        # 确保 suggestions 是列表
         if not isinstance(result.get("suggestions"), list):
             result["suggestions"] = [str(result.get("suggestions", ""))]
 
         return result
 
+    def _normalize_performance_level(self, raw_level: Any) -> Dict[str, Any]:
+        mapping = {
+            "excellent": "excellent",
+            "good": "good",
+            "pass": "pass",
+            "fail": "fail",
+            "优秀": "excellent",
+            "良好": "good",
+            "合格": "pass",
+            "不合格": "fail",
+            "待改进": "fail",
+        }
+        normalized_code = mapping.get(str(raw_level or "").strip().lower(), None)
+        if normalized_code is None:
+            return get_performance_level(0)
+
+        threshold_map = {
+            "excellent": 95,
+            "good": 85,
+            "pass": 70,
+            "fail": 0,
+        }
+        return get_performance_level(threshold_map[normalized_code])
+
     @classmethod
     def from_settings(cls) -> Optional["LLMScoringService"]:
-        """从应用配置创建实例（若未配置 API Key 则返回 None）
-
-        Returns:
-            LLMScoringService 实例，或 None（未配置时）
-        """
         from app.core.config import settings
 
         if not settings.LLM_API_KEY:

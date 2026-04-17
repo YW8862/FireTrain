@@ -56,10 +56,13 @@ export function uploadVideo(trainingId, videoPath) {
 /**
  * 完成训练并获取评分
  */
-export function completeTraining(trainingId) {
+export function completeTraining(trainingId, useAiScoring = true) {
   return request({
     url: `/training/complete/${trainingId}`,
     method: 'post',
+    params: {
+      use_ai_scoring: useAiScoring
+    },
     timeout: 120000  // 增加到 120 秒，因为 AI 分析需要较长时间
   })
 }
@@ -82,5 +85,15 @@ export function getTrainingHistory(params) {
     url: '/training/history',
     method: 'get',
     params
+  })
+}
+
+/**
+ * 删除当前用户自己的未完成训练记录
+ */
+export function deleteTrainingRecord(trainingId) {
+  return request({
+    url: `/training/${trainingId}`,
+    method: 'delete'
   })
 }

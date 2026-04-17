@@ -1,12 +1,15 @@
 <template>
-  <div class="report-container">
-    <!-- 顶部导航栏 -->
+  <div class="app-page report-page">
     <NavBar />
 
-    <el-card class="report-card">
+    <div class="app-shell app-shell--narrow">
+    <el-card class="report-card section-card">
       <div class="report-header">
         <div class="header-left">
-          <h2>📊 训练评分报告</h2>
+          <div>
+            <h2>实操测评报告</h2>
+            <p class="report-subtitle">查看本次训练总分、步骤表现和改进建议。</p>
+          </div>
           <!-- 管理员视图标识 -->
           <el-tag v-if="isAdmin" type="warning" size="small" style="margin-left: 10px">
             <el-icon><UserFilled /></el-icon>
@@ -65,22 +68,27 @@
             <div class="score-label">总分（分）</div>
           </div>
           <div class="score-percent">({{ reportData.total_score }}%)</div>
-          <el-tag :type="getLevelTagType(reportData.performance_level)" size="large" class="level-tag">
-            {{ reportData.performance_level === 'excellent' ? '优秀' :
-               reportData.performance_level === 'good' ? '良好' :
-               reportData.performance_level === 'pass' ? '合格' : '待改进' }}
+          <el-tag :type="getPerformanceTagType(reportData.performance_level)" size="large" class="level-tag">
+            {{ getPerformanceLabel(reportData.performance_level) }}
           </el-tag>
         </div>
 
-        <!-- 反馈建议 -->
-        <div v-if="reportData.feedback" class="feedback-section">
-          <h2>💡 改进建议</h2>
-          <ul class="suggestion-list">
+        <!-- 改进建议 -->
+        <div class="feedback-section">
+          <h2>训练改进建议</h2>
+          <ul v-if="suggestions.length > 0" class="suggestion-list">
             <li v-for="(suggestion, index) in suggestions" :key="index" class="suggestion-item">
               <el-icon class="suggestion-icon"><SuccessFilled /></el-icon>
               {{ suggestion }}
             </li>
           </ul>
+          <div v-else class="empty-data">暂无数据</div>
+        </div>
+
+        <!-- 整体反馈 -->
+        <div v-if="reportData.feedback" class="feedback-section">
+          <h2>整体反馈</h2>
+          <p class="feedback-text">{{ reportData.feedback }}</p>
         </div>
 
         <!-- 分项评分 -->
@@ -88,64 +96,54 @@
           <el-row :gutter="20">
             <el-col :span="8">
               <div class="dimension-scores">
-                <div class="dimension-item">
-                  <span class="dimension-label">动作完整性</span>
-                  <el-progress
-                    :percentage="reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score"
-                    :color="getDimensionColor(reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score)"
-                  />
-                  <p v-if="reportData.dimension_scores?.action_completeness?.comment" class="dimension-comment">
-                    {{ reportData.dimension_scores.action_completeness.comment }}
-                  </p>
-                </div>
-                <div class="dimension-item">
-                  <span class="dimension-label">姿态规范性</span>
-                  <el-progress
-                    :percentage="reportData.dimension_scores?.pose_standardization?.score ?? Math.round(reportData.total_score * 0.95)"
-                    :color="getDimensionColor(reportData.dimension_scores?.pose_standardization?.score ?? reportData.total_score * 0.95)"
-                  />
-                  <p v-if="reportData.dimension_scores?.pose_standardization?.comment" class="dimension-comment">
-                    {{ reportData.dimension_scores.pose_standardization.comment }}
-                  </p>
-                </div>
-                <div class="dimension-item">
-                  <span class="dimension-label">操作时效性</span>
-                  <el-progress
-                    :percentage="reportData.dimension_scores?.timeliness?.score ?? Math.round(reportData.total_score * 0.9)"
-                    :color="getDimensionColor(reportData.dimension_scores?.timeliness?.score ?? reportData.total_score * 0.9)"
-                  />
-                  <p v-if="reportData.dimension_scores?.timeliness?.comment" class="dimension-comment">
-                    {{ reportData.dimension_scores.timeliness.comment }}
-                  </p>
-                </div>
+                <template v-if="hasDimensionData">
+                  <div v-for="item in dimensionItems" :key="item.key" class="dimension-item">
+                    <span class="dimension-label">{{ item.label }}</span>
+                    <el-progress
+                      v-if="item.hasData"
+                      :percentage="item.score"
+                      :color="getDimensionColor(item.score)"
+                    />
+                    <div v-else class="empty-data-inline">暂无数据</div>
+                    <p v-if="item.comment" class="dimension-comment">
+                      {{ item.comment }}
+                    </p>
+                  </div>
+                </template>
+                <div v-else class="empty-data">暂无数据</div>
               </div>
             </el-col>
             <el-col :span="8">
               <!-- 雷达图 -->
-              <div ref="radarChartRef" class="chart-container"></div>
+              <div v-if="hasDimensionData" ref="radarChartRef" class="chart-container"></div>
+              <div v-else class="chart-empty-state">暂无数据</div>
             </el-col>
             <el-col :span="8">
               <!-- 步骤分数列表 -->
               <div class="step-scores-list">
-                <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-score-item">
-                  <div class="step-score-header">
-                    <span class="step-score-name">{{ step.step_name }}</span>
-                    <el-tag :type="getScoreTagType(step.score)" size="small">{{ step.score }}分</el-tag>
+                <template v-if="reportData.step_scores.length > 0">
+                  <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-score-item">
+                    <div class="step-score-header">
+                      <span class="step-score-name">{{ step.step_name }}</span>
+                      <el-tag :type="getScoreTagType(step.score)" size="small">{{ step.score }}分</el-tag>
+                    </div>
+                    <el-progress 
+                      :percentage="step.score" 
+                      :color="getScoreColor(step.score)"
+                      :show-text="false"
+                      :stroke-width="4"
+                    />
+                    <p v-if="step.feedback" class="step-score-feedback">{{ step.feedback }}</p>
                   </div>
-                  <el-progress 
-                    :percentage="step.score" 
-                    :color="getScoreColor(step.score)"
-                    :show-text="false"
-                    :stroke-width="4"
-                  />
-                  <p v-if="step.feedback" class="step-score-feedback">{{ step.feedback }}</p>
-                </div>
+                </template>
+                <div v-else class="empty-data">暂无数据</div>
               </div>
             </el-col>
           </el-row>
         </div>
       </div>
     </el-card>
+    </div>
   </div>
 </template>
 
@@ -153,10 +151,20 @@
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Warning, SuccessFilled, UserFilled, Back } from '@element-plus/icons-vue'
+import { SuccessFilled, UserFilled, Back } from '@element-plus/icons-vue'
 import { getTrainingDetail } from '@/api/training'
 import * as echarts from 'echarts'
 import NavBar from '@/components/NavBar.vue'
+import { getTrainingTypeLabel } from '@/utils/trainingType'
+import {
+  extractPerformanceLevel,
+  extractStepScores,
+  getDimensionItems,
+  getPerformanceLabel,
+  getPerformanceTagType,
+  hasDimensionScores,
+  normalizeSuggestions
+} from '@/utils/trainingReport'
 
 const route = useRoute()
 const router = useRouter()
@@ -178,49 +186,19 @@ const trainingInfo = ref(null)
 const reportData = reactive({
   training_id: route.params.id,
   total_score: 0,
-  performance_level: 'pass',
+  performance_level: null,
   feedback: '',
   step_scores: [],
   problems: [],
   suggestions: [],
-  dimension_scores: null
+  dimension_scores: null,
+  analysis_summary: null
 })
 
 // 建议列表（从反馈中生成）
 const suggestions = ref([])
-
-// 获取等级图标
-const getLevelIcon = (level) => {
-  const icons = {
-    excellent: 'SuccessFilled',
-    good: 'CircleCheckFilled',
-    pass: 'InfoFilled',
-    fail: 'CircleCloseFilled'
-  }
-  return icons[level] || 'InfoFilled'
-}
-
-// 获取等级标题
-const getLevelTitle = (level) => {
-  const titles = {
-    excellent: '表现优秀',
-    good: '表现良好',
-    pass: '基本合格',
-    fail: '需要改进'
-  }
-  return titles[level] || '完成训练'
-}
-
-// 获取等级标签类型
-const getLevelTagType = (level) => {
-  const types = {
-    excellent: 'success',
-    good: 'success',
-    pass: 'warning',
-    fail: 'danger'
-  }
-  return types[level] || 'info'
-}
+const dimensionItems = computed(() => getDimensionItems(reportData.dimension_scores))
+const hasDimensionData = computed(() => hasDimensionScores(reportData.dimension_scores))
 
 // 获取分数标签类型
 const getScoreTagType = (score) => {
@@ -229,15 +207,6 @@ const getScoreTagType = (score) => {
   if (scoreNum >= 80) return 'success'
   if (scoreNum >= 60) return 'warning'
   return 'danger'
-}
-
-// 获取步骤颜色
-const getStepColor = (score) => {
-  const scoreNum = typeof score === 'string' ? parseFloat(score) : score
-  if (scoreNum >= 90) return '#67C23A'
-  if (scoreNum >= 80) return '#67C23A'
-  if (scoreNum >= 60) return '#E6A23C'
-  return '#F56C6C'
 }
 
 // 加载报告数据
@@ -255,40 +224,12 @@ const loadReportData = async () => {
 
     // 维度分数（LLM 评分时返回）
     reportData.dimension_scores = res.dimension_scores || null
+    reportData.analysis_summary = res.analysis_summary || null
 
-    // 性能等级：优先用 step_scores 中存储的等级，否则根据总分判断
-    const storedLevel = (res.step_scores || {})._performance_level
-    if (storedLevel) {
-      reportData.performance_level = storedLevel
-    } else if (res.total_score >= 90) {
-      reportData.performance_level = 'excellent'
-    } else if (res.total_score >= 80) {
-      reportData.performance_level = 'good'
-    } else if (res.total_score >= 60) {
-      reportData.performance_level = 'pass'
-    } else {
-      reportData.performance_level = 'fail'
-    }
-    
-    // 解析步骤分数 - 将对象转换为数组，过滤掉 _meta 键
-    if (res.step_scores) {
-      // API 返回的是对象 {step1: {...}, step2: {...}}，需要转换为数组
-      // 过滤掉 _ 开头的元数据字段（如 _suggestions, _dimension_scores）
-      reportData.step_scores = Object.entries(res.step_scores)
-        .filter(([key]) => !key.startsWith('_'))
-        .map(([key, value]) => ({
-          step_name: value.step_name || `步骤${key.replace('step', '')}`,
-          score: parseFloat(value.score) || 0,
-          feedback: value.feedback || ''
-        }))
-    }
+    reportData.performance_level = extractPerformanceLevel(res)
+    reportData.step_scores = extractStepScores(res.step_scores)
 
-    // AI 改进建议：优先使用详情接口返回的 suggestions 字段
-    if (res.suggestions && res.suggestions.length > 0) {
-      suggestions.value = res.suggestions
-    } else {
-      suggestions.value = []
-    }
+    suggestions.value = normalizeSuggestions(res.suggestions)
     
     // 渲染图表
     renderRadarChart()
@@ -302,23 +243,28 @@ const loadReportData = async () => {
 
 // 渲染雷达图
 const renderRadarChart = () => {
-  if (!radarChartRef.value) return
-  
-  // 初始化图表
-  radarChart = echarts.init(radarChartRef.value)
-  
-  // 准备数据 - 确保 step_scores 是数组
-  if (!Array.isArray(reportData.step_scores) || reportData.step_scores.length === 0) {
-    console.warn('步骤分数数据格式不正确')
+  if (radarChart) {
+    radarChart.dispose()
+    radarChart = null
+  }
+
+  if (!radarChartRef.value || !hasDimensionData.value) {
     return
   }
+
+  radarChart = echarts.init(radarChartRef.value)
   
-  const indicators = reportData.step_scores.map(step => ({
-    name: step.step_name,
-    max: 100
-  }))
-  
-  const data = reportData.step_scores.map(step => step.score)
+  const indicators = [
+    { name: '动作完整性', max: 100 },
+    { name: '姿态规范性', max: 100 },
+    { name: '操作时效性', max: 100 }
+  ]
+
+  const data = [
+    dimensionItems.value[0].score ?? 0,
+    dimensionItems.value[1].score ?? 0,
+    dimensionItems.value[2].score ?? 0
+  ]
   
   const option = {
     title: {
@@ -361,14 +307,6 @@ const goToAdminDashboard = () => {
 }
 
 // 获取训练类型标签
-const getTrainingTypeLabel = (type) => {
-  const labels = {
-    'fire_extinguisher': '灭火器操作',
-    'extinguisher': '灭火器操作'
-  }
-  return labels[type] || type
-}
-
 // 获取状态标签类型
 const getStatusType = (status) => {
   const types = {
@@ -450,15 +388,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.report-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 0;
+.report-page {
+  padding-bottom: 24px;
 }
 
 .report-card {
-  max-width: 1200px;
-  margin: 20px auto;
+  margin: 0;
 }
 
 /* 管理员信息卡片 */
@@ -483,6 +418,12 @@ onUnmounted(() => {
   border-bottom: 2px solid #e4e7ed;
 }
 
+.report-subtitle {
+  margin: 8px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 14px;
+}
+
 .header-left {
   display: flex;
   align-items: center;
@@ -503,8 +444,8 @@ onUnmounted(() => {
   text-align: center;
   margin-bottom: 30px;
   padding: 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.96), rgba(30, 64, 175, 0.84));
+  border-radius: 12px;
   color: #fff;
 }
 
@@ -555,6 +496,13 @@ onUnmounted(() => {
   font-weight: 600;
   color: #92400e;
   margin: 0 0 16px 0;
+}
+
+.feedback-text {
+  margin: 0;
+  color: #78350f;
+  line-height: 1.8;
+  white-space: pre-wrap;
 }
 
 .suggestion-list {
@@ -616,9 +564,31 @@ onUnmounted(() => {
   color: #909399;
 }
 
+.empty-data,
+.chart-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
+}
+
+.empty-data-inline {
+  color: #909399;
+  font-size: 13px;
+}
+
 .chart-container {
   height: 300px;
   width: 100%;
+}
+
+.chart-empty-state {
+  height: 300px;
+  background: #f5f7fa;
+  border-radius: 8px;
 }
 
 .step-scores-list {
@@ -653,8 +623,9 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .report-container {
-    padding: 10px;
+  .report-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

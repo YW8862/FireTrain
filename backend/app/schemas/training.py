@@ -56,6 +56,8 @@ class TrainingDetailResponse(TrainingRecordResponse):
     actions: Optional[List[Dict[str, Any]]] = None
     suggestions: List[str] = Field(default_factory=list, description="AI 改进建议")
     dimension_scores: Optional[Dict[str, Any]] = Field(None, description="三维度评分")
+    performance_level: Optional[str] = Field(None, description="表现等级编码")
+    analysis_summary: Optional[Dict[str, Any]] = Field(None, description="统一分析摘要")
 
 
 class TrainingHistoryResponse(BaseModel):
@@ -86,6 +88,8 @@ class StepScoreSchema(BaseModel):
 class ScoringResultSchema(BaseModel):
     """评分结果 Schema"""
     total_score: Decimal
-    step_scores: List[StepScoreSchema]
+    performance_level: str
+    dimension_scores: Dict[str, Any]
+    step_scores: Dict[str, Any]
     feedback: str
     suggestions: List[str] = Field(default_factory=list)

@@ -1,7 +1,7 @@
-"""YOLOv8 目标检测模块（ONNX Runtime 版本）
+"""YOLOv8 目标检测模块（ONNX Runtime 版本）。
 
 使用 ONNX Runtime 进行高性能推理。
-模型文件：data/models/yolov8.onnx
+默认按自训练的灭火器检测模型处理，模型文件位于 ``settings.YOLO_MODEL_PATH``。
 """
 import cv2
 import numpy as np
@@ -21,16 +21,11 @@ class FireExtinguisherDetector:
     - 跨平台部署
     """
     
-    # COCO 类别索引（如果使用预训练模型）
-    # 注意：COCO 数据集中没有专门的"灭火器"类别
-    # 第一版可以检测"人" (class 0) 来辅助姿态分析
-    # 后续微调后可以检测灭火器
+    # 自训练模型的默认类别索引。
+    # 当前按单类别灭火器检测模型处理；如果导出的 ONNX 元数据包含 names，
+    # 会优先使用模型自身的类别定义。
     PRETRAINED_CLASSES = {
-        "person": 0,
-        # 后续微调后可添加：
-        # "fire_extinguisher": 1,
-        # "nozzle": 2,
-        # "handle": 3,
+        "fire_extinguisher": 0,
     }
     
     # 默认检测配置
@@ -39,7 +34,7 @@ class FireExtinguisherDetector:
         "iou_threshold": 0.45,      # NMS IoU 阈值
         "img_size": 640,            # 输入图像尺寸
         "max_det": 300,             # 最大检测数量
-        "classes": [0],             # 默认检测人（COCO class 0）
+        "classes": [0],             # 默认检测自训练模型的灭火器类别
     }
     
     def __init__(
@@ -94,15 +89,12 @@ class FireExtinguisherDetector:
             if 'names' in metadata:
                 self.names = eval(metadata['names'])
             else:
-                # 默认 COCO 类别名称（前几个）
+                # 默认回退到自训练灭火器模型的类别名称
                 self.names = {
-                    0: 'person',
-                    1: 'bicycle',
-                    2: 'car',
-                    # ... 可以根据需要添加更多
+                    0: 'fire_extinguisher',
                 }
         except Exception:
-            self.names = {0: 'person'}
+            self.names = {0: 'fire_extinguisher'}
         
         print(f"📦 模型输入形状：{self.input_shape}")
         print(f"📦 检测类别数：{len(self.names)}")

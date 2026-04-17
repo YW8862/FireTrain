@@ -1,95 +1,150 @@
 <template>
-  <div class="training-container">
-    <!-- 顶部导航栏 - 训练期间隐藏 -->
+  <div class="app-page training-page">
     <NavBar :visible="!currentTraining" />
 
-    <div class="main-content">
-      <el-card class="training-card">
+    <div class="app-shell">
+      <div class="training-page-header">
+        <div>
+          <div class="training-title-meta">
+            <img :src="flameSymbol" alt="" class="title-meta-icon" />
+            <p class="training-eyebrow">用户训练页</p>
+          </div>
+          <h1 class="training-page-title">
+            {{ currentTraining ? `${selectedTrainingTypeLabel} · ${currentStepTitle}` : `${selectedTrainingTypeLabel}训练准备` }}
+          </h1>
+          <p class="training-page-subtitle">
+            训练过程中请保持人员完整入镜，按规范步骤完成操作，系统将生成本次实操测评结果。
+          </p>
+        </div>
+        <el-tag class="status-pill" :type="getStatusType(currentTraining?.status || 'created')" size="large">
+          {{ currentTraining ? getStatusText(currentTraining.status) : '未开始' }}
+        </el-tag>
+      </div>
+
+      <div class="safety-banner training-banner">
+        <el-icon><WarningFilled /></el-icon>
+        <div>
+          <strong>训练中请注意</strong>
+          <div>请保持摄像头对准训练人员全身，避免遮挡关键动作，确保动作连续清晰。</div>
+        </div>
+      </div>
+
+      <el-card class="training-card section-card">
       <!-- 未开始训练 -->
       <div v-if="!currentTraining">
-        <div class="training-header">
-          <h2>📋 训练准备</h2>
-          <el-tag :type="getStatusType('created')" size="large">
-            {{ getStatusText('created') }}
-          </el-tag>
-        </div>
-
-        <el-alert
-          title="训练说明"
-          type="info"
-          :closable="false"
-          show-icon
-          class="mb-4"
-        >
-          <p>请按照标准流程完成灭火器操作训练：</p>
-          <ol>
-            <li>准备阶段：做好个人防护，确认逃生路线</li>
-            <li>提起灭火器：用腿部力量提起灭火器</li>
-            <li>拔保险销：握住拉环用力拔出</li>
-            <li>握喷管：双手稳固握持喷管</li>
-            <li>瞄准火源：对准火焰根部，保持 2-3 米距离</li>
-            <li>压把手：均匀用力下压，左右扫射</li>
-          </ol>
-        </el-alert>
-
-        <el-form :model="trainingForm" class="training-form">
-          <div class="form-row">
-            <div class="form-item">
-              <label class="form-label">
-                <el-icon><Document /></el-icon>
-                训练类型
-              </label>
-              <el-select v-model="trainingForm.training_type" placeholder="请选择训练类型" class="form-select">
-                <el-option label="🔥 灭火器操作" value="fire_extinguisher" />
-                <el-option label="📋 其他训练" value="other" />
-              </el-select>
+        <div class="prep-layout">
+          <div class="prep-main">
+            <div class="training-header">
+              <h2>训练准备</h2>
+              <el-tag :type="getStatusType('created')" size="large">
+                {{ getStatusText('created') }}
+              </el-tag>
             </div>
-            
-            <div class="form-item">
-              <label class="form-label">
-                <el-icon><Timer /></el-icon>
-                预计时长
-              </label>
-              <el-input-number 
-                v-model="trainingForm.duration_seconds" 
-                :min="60" 
-                :max="300" 
-                :step="10"
-                class="form-timer"
-                controls-position="right"
-              >
-                <template #prefix>
-                  <el-icon><Clock /></el-icon>
-                </template>
-              </el-input-number>
-              <span class="duration-hint">60-300 秒</span>
-            </div>
-          </div>
 
-          <div class="form-actions">
-            <el-button 
-              type="primary" 
-              @click="handleStartTraining" 
-              :loading="starting" 
-              size="large"
-              class="start-training-btn"
+            <el-alert
+              title="训练说明"
+              type="info"
+              :closable="false"
+              show-icon
+              class="mb-4"
             >
-              <el-icon><VideoPlay /></el-icon>
-              开始训练
-            </el-button>
+              <p>请按照标准流程完成灭火器操作训练：</p>
+              <ol>
+                <li>准备阶段：做好个人防护，确认逃生路线</li>
+                <li>提起灭火器：用腿部力量提起灭火器</li>
+                <li>拔保险销：握住拉环用力拔出</li>
+                <li>握喷管：双手稳固握持喷管</li>
+                <li>瞄准火源：对准火焰根部，保持 2-3 米距离</li>
+                <li>压把手：均匀用力下压，左右扫射</li>
+              </ol>
+            </el-alert>
+
+            <el-form :model="trainingForm" class="training-form">
+              <div class="training-type-field">
+                <span class="prep-info-label">训练类型</span>
+                <el-select
+                  v-model="trainingForm.training_type"
+                  placeholder="请选择训练类型"
+                  class="training-type-select"
+                >
+                  <el-option
+                    v-for="option in trainingTypeOptions"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </el-select>
+              </div>
+
+              <div class="prep-info-strip">
+                <div class="prep-info-item">
+                  <span class="prep-info-label">训练项目</span>
+                  <strong>{{ selectedTrainingTypeLabel }}</strong>
+                </div>
+                <div class="prep-info-item">
+                  <span class="prep-info-label">步骤数量</span>
+                  <strong>6 个标准步骤</strong>
+                </div>
+                <div class="prep-info-item">
+                  <span class="prep-info-label">系统设置</span>
+                  <strong>自动记录训练过程</strong>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <el-button 
+                  type="primary" 
+                  @click="handleStartTraining" 
+                  :loading="starting" 
+                  size="large"
+                  class="start-training-btn"
+                >
+                  <el-icon><VideoPlay /></el-icon>
+                  开始训练
+                </el-button>
+              </div>
+            </el-form>
           </div>
-        </el-form>
+
+          <div class="prep-side">
+            <div class="prep-side-card">
+              <img :src="fireExtinguisherSymbol" alt="" class="prep-illustration" />
+              <div class="prep-side-title">操作步骤速览</div>
+              <div class="prep-step-list">
+                <div v-for="(step, index) in steps" :key="step.name" class="prep-step-item">
+                  <span class="prep-step-index">{{ index + 1 }}</span>
+                  <span>{{ step.name }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 训练中 -->
       <div v-else class="training-content">
+        <div class="training-runtime-head">
+          <div class="runtime-stat">
+            <span class="runtime-label">当前状态</span>
+            <strong>{{ getStatusText(currentTraining.status) }}</strong>
+          </div>
+          <div class="runtime-stat">
+            <span class="runtime-label">训练类型</span>
+            <strong>{{ selectedTrainingTypeLabel }}</strong>
+          </div>
+          <div class="runtime-stat">
+            <span class="runtime-label">训练目标</span>
+            <strong>动作完整、姿态规范、流程正确</strong>
+          </div>
+        </div>
+
         <el-row :gutter="20">
           <!-- 左侧：视频预览区 -->
-          <el-col :span="14">
+          <el-col :lg="15" :md="24">
             <el-card class="video-card">
               <template #header>
                 <div class="card-header">
-                  <span>📹 视频预览区</span>
+                  <span>训练视频画面</span>
                   <el-tag :type="getStatusType(currentTraining.status)">
                     {{ getStatusText(currentTraining.status) }}
                   </el-tag>
@@ -119,7 +174,7 @@
               
               <div class="video-controls">
                 <el-button 
-                  type="success" 
+                  type="primary" 
                   @click="handleCompleteTraining" 
                   :loading="completing" 
                   :disabled="!currentTraining || currentTraining?.status === 'done' || isPaused"
@@ -162,14 +217,19 @@
                 />
                 <p>{{ uploadState.text }}</p>
               </div>
+
+              <div class="camera-tip">
+                <span>建议拍摄角度：</span>
+                <span>人物完整入镜、画面稳定、关键动作无遮挡。</span>
+              </div>
             </el-card>
           </el-col>
 
           <!-- 右侧：训练步骤 -->
-          <el-col :span="10">
+          <el-col :lg="9" :md="24">
             <el-card class="steps-card">
               <template #header>
-                <span>📋 训练步骤</span>
+                <span>操作指引</span>
               </template>
               
               <div class="steps-list">
@@ -193,6 +253,12 @@
               <div v-if="realtimeFeedback" class="feedback-box">
                 <el-alert :title="realtimeFeedback" type="info" :closable="false" show-icon />
               </div>
+
+              <div class="step-legend">
+                <span><i class="legend-dot pending"></i>未开始</span>
+                <span><i class="legend-dot doing"></i>进行中</span>
+                <span><i class="legend-dot done"></i>已完成</span>
+              </div>
             </el-card>
           </el-col>
         </el-row>
@@ -203,16 +269,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onUnmounted } from 'vue'
+import { computed, ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { VideoCamera, Document, Timer, Clock, VideoPlay, VideoPause } from '@element-plus/icons-vue'
-import { startTraining, completeTraining, preCheckTraining, uploadVideoFile } from '@/api/training'
-import { useUserStore } from '@/store/user'
+import { VideoCamera, VideoPlay, VideoPause, WarningFilled } from '@element-plus/icons-vue'
+import { startTraining, completeTraining, preCheckTraining, uploadVideoFile, deleteTrainingRecord } from '@/api/training'
 import NavBar from '@/components/NavBar.vue'
+import fireExtinguisherSymbol from '@/assets/illustrations/fire-extinguisher-symbol.svg'
+import flameSymbol from '@/assets/illustrations/flame-symbol.svg'
+import { TRAINING_TYPE_OPTIONS, getTrainingTypeLabel } from '@/utils/trainingType'
 
 const router = useRouter()
-const userStore = useUserStore()
 
 // 状态
 const starting = ref(false)
@@ -226,6 +293,7 @@ let recordedChunks = []    // 录制的视频片段
 let countdownTimer = null
 const realtimeFeedback = ref('')
 const isPaused = ref(false) // 暂停状态
+const recordedVideoBlob = ref(null)
 const uploadState = reactive({
   visible: false,
   percentage: 0,
@@ -243,6 +311,18 @@ const trainingForm = reactive({
 
 // 当前训练
 const currentTraining = ref(null)
+
+const currentStepTitle = computed(() => {
+  const currentStep = steps.find((step) => step.status === 'doing')
+  if (currentStep) return currentStep.name
+  const finishedCount = steps.filter((step) => step.status === 'done').length
+  return finishedCount ? `步骤 ${finishedCount + 1}` : '训练准备'
+})
+
+const trainingTypeOptions = TRAINING_TYPE_OPTIONS
+const selectedTrainingTypeLabel = computed(() =>
+  getTrainingTypeLabel(currentTraining.value?.training_type || trainingForm.training_type)
+)
 
 // 步骤状态
 const steps = reactive([
@@ -290,6 +370,7 @@ const resetUploadState = () => {
 // 开启摄像头并开始录制
 const startCamera = async () => {
   try {
+    recordedVideoBlob.value = null
     const mediaStream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 1280 },
@@ -407,7 +488,10 @@ const handleStartTraining = async () => {
   starting.value = true
   try {
     const res = await startTraining(trainingForm)
-    currentTraining.value = res
+    currentTraining.value = {
+      ...res,
+      training_type: trainingForm.training_type
+    }
     ElMessage.success('训练已开始，请按照步骤操作')
     
     // 自动开启摄像头
@@ -433,9 +517,9 @@ const handleCompleteTraining = async () => {
       '确定要完成训练吗？\n\n' +
       '系统将进行以下检查：\n' +
       '1. 验证视频已上传\n' +
-      '2. AI 分析训练动作\n' +
+      '2. 分析训练动作\n' +
       '3. 检测 6 个标准步骤\n\n' +
-      '⚠️ 如果未检测到有效动作，将无法完成训练',
+      '⚠️ 如果预检测判定无有效动作，继续提交通常会得到 0 分。',
       '提示',
       {
         confirmButtonText: '确定',
@@ -454,7 +538,11 @@ const handleCompleteTraining = async () => {
       text: '正在整理录制视频...',
       indeterminate: true
     })
-    const videoBlob = await stopRecording()
+    let videoBlob = recordedVideoBlob.value
+    if (!videoBlob) {
+      videoBlob = await stopRecording()
+      recordedVideoBlob.value = videoBlob
+    }
     
     // 2. 如果有视频，先上传视频
     if (videoBlob && videoBlob.size > 0) {
@@ -489,7 +577,7 @@ const handleCompleteTraining = async () => {
         updateUploadState({
           percentage: 100,
           status: 'success',
-          text: '视频上传完成，正在进行 AI 快速检测...',
+          text: '视频上传完成，正在进行视频预检...',
           indeterminate: false
         })
         console.log('视频上传成功')
@@ -498,32 +586,34 @@ const handleCompleteTraining = async () => {
         updateUploadState({
           percentage: 100,
           status: 'exception',
-          text: uploadError.customMessage || '视频上传失败，将继续尝试完成训练',
+          text: uploadError.customMessage || uploadError.response?.data?.detail || '视频上传失败，请重试',
           indeterminate: false
         })
-        // 上传失败也继续，使用模拟评分
-        ElMessage.warning('视频上传失败，将使用模拟评分')
+        ElMessage.error(uploadError.customMessage || uploadError.response?.data?.detail || '视频上传失败，请重新提交')
+        return
       } finally {
         uploadAbortController = null
       }
     } else {
-      console.warn('没有录制到视频，将使用模拟评分')
+      console.warn('没有录制到视频，无法继续提交训练')
       updateUploadState({
         percentage: 0,
-        status: 'warning',
-        text: '未录制到有效视频，将继续尝试完成训练',
+        status: 'exception',
+        text: '未录制到有效视频，无法完成训练',
         indeterminate: false
       })
+      ElMessage.error('未录制到有效视频，请重新录制后再提交')
+      return
     }
     
-    // 3. AI 预检测（快速分析）
+    // 3. 视频预检（快速分析）
     let shouldContinue = true
     try {
-      ElMessage.info('AI 正在快速检测...')
+      ElMessage.info('正在进行视频预检...')
       updateUploadState({
         percentage: 100,
         status: '',
-        text: '视频已上传，正在进行 AI 快速检测...',
+        text: '视频已上传，正在进行视频预检...',
         indeterminate: true
       })
       // 调用预检测 API（稍后实现）
@@ -544,6 +634,7 @@ const handleCompleteTraining = async () => {
               type: 'warning'
             }
           )
+          ElMessage.warning('已继续提交。根据当前预检测结果，本次训练大概率会得到 0 分。')
         } catch {
           // 用户选择取消
           shouldContinue = false
@@ -566,10 +657,10 @@ const handleCompleteTraining = async () => {
     updateUploadState({
       percentage: 100,
       status: '',
-      text: 'AI 正在计算评分，请稍候...',
+      text: '正在生成测评结果，请稍候...',
       indeterminate: true
     })
-    const res = await completeTraining(currentTraining.value.training_id)
+    const res = await completeTraining(currentTraining.value.training_id, true)
     
     ElMessage.success('训练已完成')
     resetUploadState()
@@ -589,30 +680,7 @@ const handleCompleteTraining = async () => {
         text: error.customMessage || error.response?.data?.detail || '训练完成失败',
         indeterminate: false
       })
-      // 如果是状态错误，给出更友好的提示
-      if (error.response?.data?.detail) {
-        const detail = error.response.data.detail
-        
-        // 根据错误类型给出不同提示
-        if (detail.includes('未检测到')) {
-          ElMessage.error(
-            '❌ 未检测到有效训练动作\n\n' +
-            '请确保：\n' +
-            '1. 在摄像头范围内操作\n' +
-            '2. 完成 6 个标准步骤\n' +
-            '3. 每个动作做到位\n' +
-            '4. 训练时长不少于 30 秒'
-          )
-        } else if (detail.includes('视频')) {
-          ElMessage.error('❌ 请先上传训练视频')
-        } else if (detail.includes('AI 分析')) {
-          ElMessage.error('❌ AI 分析失败，请稍后重试或联系管理员')
-        } else {
-          ElMessage.error('❌ ' + detail)
-        }
-      } else {
-        ElMessage.error(error.response?.data?.detail || '完成训练失败，请稍后重试')
-      }
+      ElMessage.error(error.customMessage || error.response?.data?.detail || '完成训练失败，请稍后重试')
     }
   } finally {
     completing.value = false
@@ -667,20 +735,23 @@ const handleCancel = async () => {
     }
     stopCamera()
     
-    // TODO: 调用后端 API 删除训练记录
-    // await deleteTraining(currentTraining.value.training_id)
+    await deleteTrainingRecord(currentTraining.value.training_id)
     
     // 清空当前训练状态
     currentTraining.value = null
     isPaused.value = false
+    recordedVideoBlob.value = null
     resetUploadState()
     
     ElMessage.success('已取消训练')
-  } catch {
-    // 用户取消操作，继续训练
-    if (isPaused.value) {
-      isPaused.value = false
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') {
+      if (isPaused.value) {
+        isPaused.value = false
+      }
+      return
     }
+    ElMessage.error(error.customMessage || error.response?.data?.detail || '取消训练失败')
   }
 }
 
@@ -738,6 +809,7 @@ const getStatusText = (status) => {
 const resetTraining = () => {
   stopCamera()
   currentTraining.value = null
+  recordedVideoBlob.value = null
   resetUploadState()
   ElMessage.success('已准备就绪，可以开始新的训练')
 }
@@ -775,6 +847,7 @@ onUnmounted(() => {
   }
   resetUploadState()
   stopCamera()
+  recordedVideoBlob.value = null
   if (countdownTimer) {
     clearInterval(countdownTimer)
   }
@@ -782,6 +855,175 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.training-page {
+  padding-bottom: 24px;
+}
+
+.training-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.training-title-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.training-eyebrow {
+  margin: 0 0 10px;
+  color: var(--ft-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title-meta-icon {
+  width: 18px;
+  height: 18px;
+  margin-bottom: 10px;
+}
+
+.training-page-title {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.25;
+}
+
+.training-page-subtitle {
+  margin: 10px 0 0;
+  max-width: 760px;
+  color: var(--ft-color-text-secondary);
+  line-height: 1.7;
+}
+
+.status-pill {
+  margin-top: 4px;
+}
+
+.training-banner {
+  margin-bottom: 20px;
+}
+
+.prep-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 360px);
+  gap: 20px;
+}
+
+.prep-side-card {
+  position: relative;
+  height: 100%;
+  padding: 24px 20px 20px;
+  border: 1px solid rgba(217, 33, 33, 0.12);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(30, 64, 175, 0.04), rgba(30, 64, 175, 0));
+}
+
+.prep-illustration {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  width: 54px;
+  opacity: 0.14;
+}
+
+.prep-side-title {
+  margin-bottom: 16px;
+  color: var(--ft-color-danger);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.prep-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prep-step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--ft-color-border);
+}
+
+.prep-step-index {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(30, 64, 175, 0.12);
+  color: var(--ft-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.prep-info-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.training-type-field {
+  margin-bottom: 16px;
+}
+
+.training-type-select {
+  width: 100%;
+}
+
+.prep-info-item {
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--ft-color-border);
+}
+
+.prep-info-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ft-color-text-tertiary);
+  font-size: 12px;
+}
+
+.training-runtime-head {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.runtime-stat {
+  padding: 14px 16px;
+  border: 1px solid var(--ft-color-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+}
+
+.runtime-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ft-color-text-tertiary);
+  font-size: 12px;
+}
+
+.runtime-stat strong {
+  color: var(--ft-color-text-primary);
+  font-size: 15px;
+}
+
 .training-container {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1099,6 +1341,17 @@ onUnmounted(() => {
   text-align: center;
 }
 
+.camera-tip {
+  display: flex;
+  gap: 8px;
+  padding: 14px 18px 18px;
+  color: var(--ft-color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.7;
+  background: #fff;
+  border-top: 1px dashed var(--ft-color-border);
+}
+
 /* 步骤卡片优化 */
 .steps-card {
   height: 100%;
@@ -1243,8 +1496,212 @@ onUnmounted(() => {
   border-left: 4px solid #f59e0b;
 }
 
+.step-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 20px 20px;
+  color: var(--ft-color-text-tertiary);
+  font-size: 12px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.legend-dot.pending {
+  background: var(--ft-color-text-tertiary);
+}
+
+.legend-dot.doing {
+  background: var(--ft-color-primary);
+}
+
+.legend-dot.done {
+  background: var(--ft-color-success);
+}
+
+.training-card {
+  max-width: none;
+  margin: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--ft-shadow-sm);
+}
+
+.training-header {
+  border-bottom: 1px solid var(--ft-color-border);
+}
+
+.training-header h2,
+.video-card .card-header span,
+.step-name {
+  color: var(--ft-color-text-primary);
+}
+
+::deep(.el-alert) {
+  background: #f8fbff;
+  border: 1px solid rgba(30, 64, 175, 0.16);
+}
+
+::deep(.el-alert__title) {
+  color: var(--ft-color-primary);
+}
+
+::deep(.el-alert__content) {
+  color: var(--ft-color-text-secondary);
+}
+
+.training-form {
+  background:
+    linear-gradient(180deg, rgba(30, 64, 175, 0.03), rgba(30, 64, 175, 0)),
+    #f8fafc;
+  border-color: var(--ft-color-border);
+}
+
+.form-label {
+  color: var(--ft-color-text-secondary);
+}
+
+.form-label .el-icon {
+  color: var(--ft-color-primary);
+}
+
+::deep(.el-select .el-input__wrapper),
+::deep(.el-input-number__wrapper) {
+  border: 1px solid var(--ft-color-border);
+  box-shadow: none;
+}
+
+::deep(.el-select .el-input__wrapper:hover),
+::deep(.el-input-number__wrapper:hover),
+::deep(.el-select .el-input__wrapper.is-focus),
+::deep(.el-input-number__wrapper.is-focus) {
+  border-color: var(--ft-color-primary);
+  box-shadow: none;
+}
+
+.duration-hint,
+.upload-status-box p {
+  color: var(--ft-color-text-tertiary);
+}
+
+.start-training-btn {
+  background: var(--ft-color-primary);
+  box-shadow: none;
+}
+
+.start-training-btn:hover {
+  box-shadow: var(--ft-shadow-sm);
+}
+
+.video-card,
+.steps-card {
+  box-shadow: none;
+}
+
+.video-card .card-header {
+  background:
+    linear-gradient(180deg, rgba(30, 64, 175, 0.04), rgba(30, 64, 175, 0)),
+    #f8fafc;
+  border-bottom: 1px solid var(--ft-color-border);
+}
+
+.video-container {
+  background: var(--ft-color-video);
+}
+
+.video-overlay,
+.paused-overlay {
+  backdrop-filter: none;
+}
+
+.video-controls,
+.upload-status-box {
+  border-top: 1px solid var(--ft-color-border);
+}
+
+.steps-card .card-header {
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0)),
+    #fff8f1;
+  border-bottom: 1px solid rgba(217, 119, 6, 0.16);
+}
+
+.steps-card .card-header span {
+  color: var(--ft-color-warning);
+}
+
+.step-item {
+  background: #fff;
+  border: 1px solid var(--ft-color-border);
+  box-shadow: none;
+}
+
+.step-item:hover {
+  background: #fff;
+  border-color: var(--ft-color-primary);
+  transform: translateX(2px);
+  box-shadow: none;
+}
+
+.step-item.doing {
+  background: rgba(30, 64, 175, 0.06);
+  border-color: var(--ft-color-primary);
+  box-shadow: none;
+}
+
+.step-item.done {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: var(--ft-color-success);
+  box-shadow: none;
+}
+
+.step-number {
+  background: var(--ft-color-text-tertiary);
+  box-shadow: none;
+}
+
+.step-item.doing .step-number {
+  background: var(--ft-color-primary);
+}
+
+.step-item.done .step-number {
+  background: var(--ft-color-success);
+}
+
+.step-status.doing {
+  color: var(--ft-color-primary);
+  filter: none;
+}
+
+.step-status.done {
+  color: var(--ft-color-success);
+  filter: none;
+}
+
+.step-status.error {
+  color: var(--ft-color-danger);
+  filter: none;
+}
+
+.feedback-box {
+  background: #fff8f1;
+  border-left-color: var(--ft-color-warning);
+}
+
 /* 响应式设计 */
 @media (max-width: 1024px) {
+  .prep-layout,
+  .training-runtime-head,
+  .prep-info-strip {
+    grid-template-columns: 1fr;
+  }
+
   .main-content {
     padding: 20px 15px;
   }
@@ -1282,6 +1739,10 @@ onUnmounted(() => {
     flex: 1;
     min-width: 120px;
   }
+
+  .camera-tip {
+    flex-direction: column;
+  }
   
   .step-item {
     padding: 12px;
@@ -1299,6 +1760,15 @@ onUnmounted(() => {
     width: 100%;
     padding: 14px 24px;
     font-size: 16px;
+  }
+
+  .training-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .training-page-title {
+    font-size: 24px;
   }
 }
 </style>

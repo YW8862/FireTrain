@@ -1,36 +1,39 @@
 <template>
-  <div class="login-container">
-    <el-card class="login-card">
-      <h2 class="login-title">FireTrain 消防技能训练系统</h2>
-      <p class="login-subtitle">用户登录</p>
-      
-      <el-form :model="form" :rules="rules" ref="loginFormRef" label-width="80px" @keyup.enter="handleLogin">
-        <el-form-item label="账号" prop="username">
-          <el-input v-model="form.username" placeholder="请输入账号" clearable @keyup.enter="focusPassword" />
+  <div class="auth-page">
+    <el-card class="login-card section-card">
+      <div class="auth-card-header">
+        <div class="login-title">智能消防训练评测系统</div>
+        <!-- <h1 class="login-title">登录训练系统</h1> -->
+        <p class="login-subtitle">输入账号和密码即可进入系统。</p>
+      </div>
+
+      <el-form :model="form" :rules="rules" ref="loginFormRef" label-position="top" @keyup.enter="handleLogin">
+        <el-form-item label="训练账号" prop="username">
+          <el-input v-model="form.username" placeholder="请输入训练账号" clearable @keyup.enter="focusPassword" />
         </el-form-item>
-        
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password @keyup.enter="handleLogin" ref="passwordInput" />
+
+        <el-form-item label="登录密码" prop="password">
+          <el-input v-model="form.password" type="password" placeholder="请输入登录密码" show-password @keyup.enter="handleLogin" ref="passwordInput" />
         </el-form-item>
-        
-        <el-form-item>
+
+        <div class="login-options">
           <el-checkbox v-model="form.remember">记住我</el-checkbox>
-        </el-form-item>
-        
+        </div>
+
         <el-form-item>
-          <el-button type="primary" @click="handleLogin" :loading="loading" style="width: 100%">
+          <el-button type="primary" @click="handleLogin" :loading="loading" class="submit-btn">
             登录
           </el-button>
         </el-form-item>
-        
-        <div class="login-links">
-          <span>还没有账号？</span>
-          <router-link to="/register">立即注册</router-link>
-        </div>
       </el-form>
+
+      <div class="auth-links">
+        <span>还没有账号？</span>
+        <router-link to="/register">立即注册</router-link>
+      </div>
     </el-card>
   </div>
-</template>
+ </template>
 
 <script setup>
 import { ref, reactive } from 'vue'
@@ -38,9 +41,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { login } from '@/api/user'
 import { useUserStore } from '@/store/user'
-
-// 🔥 调试标记：确认代码已加载
-console.log('🔥 LoginView.vue 已加载！版本: 2026-04-05-16-50')
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -66,10 +66,9 @@ const rules = {
 
 const handleLogin = async () => {
   if (!loginFormRef.value) return
-  
-  // 防止重复提交
+
   if (loading.value) return
-  
+
   await loginFormRef.value.validate(async (valid) => {
     if (valid) {
       loading.value = true
@@ -78,43 +77,26 @@ const handleLogin = async () => {
         userStore.setToken(res.token)
         userStore.setUserInfo(res.user_info)
         ElMessage.success('登录成功')
-        
-        // 调试日志
-        console.log('=== 登录响应 ===', res)
-        console.log('用户信息:', res.user_info)
-        console.log('用户角色:', res.user_info?.role)
-        
-        // 根据角色跳转到不同页面
+
         const role = res.user_info?.role || 'user'
-        console.log('判断后的角色:', role)
-        
+
         if (role === 'admin' || role === 'root') {
-          // 管理员和 Root 用户跳转到管理后台
-          console.log('跳转到管理后台: /admin/dashboard')
           router.push('/admin/dashboard')
         } else {
-          // 普通用户跳转到首页
-          console.log('跳转到首页: /')
           router.push('/')
         }
       } catch (error) {
         console.error('登录失败:', error)
-        
-        // 根据错误类型给出不同提示
+
         let errorMsg = '登录失败'
-        
-        // 优先使用 request.js 中设置的自定义错误信息
+
         if (error.customMessage) {
           errorMsg = error.customMessage
-          if (error.suggestion) {
-            console.log('建议:', error.suggestion)
-          }
         } else if (error.code === 'ERR_CERT_AUTHORITY_INVALID' || error.message?.includes('certificate')) {
           errorMsg = 'SSL 证书错误，请检查服务器配置或使用 HTTP 连接'
         } else if (!navigator.onLine) {
           errorMsg = '网络连接已断开，请检查网络设置'
         } else if (error.response) {
-          // 服务器返回了响应
           const status = error.response.status
           switch (status) {
             case 401:
@@ -133,13 +115,11 @@ const handleLogin = async () => {
               errorMsg = error.response.data?.detail || `登录失败 (${status})`
           }
         } else if (error.request) {
-          // 请求已发送但没有收到响应
-          errorMsg = '无法连接到服务器，请检查：\n1. 后端服务是否启动\n2. 网络连接是否正常\n3. 服务器地址是否正确'
+          errorMsg = '无法连接到服务器，请检查后端服务、网络连接和服务器地址'
         } else {
-          // 其他错误
           errorMsg = error.message || '未知错误，请稍后重试'
         }
-        
+
         ElMessage.error(errorMsg)
       } finally {
         loading.value = false
@@ -148,7 +128,6 @@ const handleLogin = async () => {
   })
 }
 
-// 在账号输入框按 Enter 时聚焦到密码输入框
 const focusPassword = () => {
   if (passwordInput.value) {
     passwordInput.value.focus()
@@ -157,42 +136,84 @@ const focusPassword = () => {
 </script>
 
 <style scoped>
-.login-container {
+.auth-page {
+  min-height: 100vh;
   display: flex;
-  justify-content: center;
   align-items: center;
-  height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  justify-content: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(circle at top, rgba(30, 64, 175, 0.08), transparent 30%),
+    var(--ft-color-page-bg);
+}
+
+.auth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(30, 64, 175, 0.12);
+  color: var(--ft-color-primary);
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .login-card {
-  width: 450px;
-  padding: 20px;
+  width: min(420px, 100%);
+  padding: 28px 24px 22px;
+  border-radius: 18px;
+}
+
+.auth-card-header {
+  margin-bottom: 14px;
+  text-align: center;
 }
 
 .login-title {
-  text-align: center;
-  color: #303133;
-  margin-bottom: 10px;
-  font-size: 24px;
+  margin: 16px 0 0;
+  color: var(--ft-color-primary);
+  font-size: 32px;
+  font-weight: 600;
 }
 
 .login-subtitle {
-  text-align: center;
-  color: #909399;
-  margin-bottom: 30px;
-  font-size: 16px;
+  margin: 10px 0 0;
+  color: var(--ft-color-text-tertiary);
 }
 
-.login-links {
-  text-align: center;
-  margin-top: 15px;
-  color: #909399;
+.login-options {
+  display: flex;
+  align-items: center;
+  margin: 2px 0 12px;
 }
 
-.login-links a {
-  color: #409EFF;
-  margin-left: 5px;
+.submit-btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+.auth-links {
+  margin-top: 8px;
+  text-align: center;
+  color: var(--ft-color-text-tertiary);
+}
+
+.auth-links a {
+  color: var(--ft-color-primary);
+  margin-left: 6px;
   text-decoration: none;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 22px 16px 18px;
+  }
+
+  .login-title {
+    font-size: 26px;
+  }
 }
 </style>

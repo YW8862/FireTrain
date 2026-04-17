@@ -1,6 +1,11 @@
 <template>
   <div class="training-management">
-    <h2 class="page-title">📋 训练数据管理</h2>
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">训练数据管理</h2>
+        <p class="page-subtitle">筛选训练记录、查看报告并执行删除等管理操作。</p>
+      </div>
+    </div>
     
     <!-- 搜索和过滤 -->
     <el-card shadow="hover" class="filter-card">
@@ -287,8 +292,18 @@ onMounted(() => {
 }
 
 .page-title {
+  margin: 0;
+  color: var(--ft-color-text-primary);
+}
+
+.page-header {
   margin-bottom: 20px;
-  color: #303133;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--ft-color-text-tertiary);
+  font-size: 14px;
 }
 
 .filter-card {

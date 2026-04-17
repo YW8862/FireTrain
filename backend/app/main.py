@@ -5,8 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import users_router, training_router, statistics_router, admin_router
 from app.api.admin_videos import router as admin_videos_router
 from app.middleware import setup_request_logging, setup_exception_handlers
-from app.core.security import get_current_user_id
-from app.services.cleanup_service import setup_cleanup_task
+from app.services.cleanup_service import setup_cleanup_task, stop_cleanup_task
 
 # 配置日志
 logging.basicConfig(
@@ -47,15 +46,24 @@ app.add_middleware(
 # 添加请求日志中间件
 setup_request_logging(app)
 
-# 设置定时清理任务
-setup_cleanup_task(app)
-
 # 注册路由
 app.include_router(users_router)
 app.include_router(training_router)
 app.include_router(statistics_router)
 app.include_router(admin_router)
 app.include_router(admin_videos_router)  # 后台管理-视频检测
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时注册后台清理任务。"""
+    await setup_cleanup_task(app)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时停止后台清理任务。"""
+    stop_cleanup_task(app)
 
 
 @app.get("/health")

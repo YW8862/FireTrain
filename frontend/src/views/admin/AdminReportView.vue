@@ -13,7 +13,7 @@
         <el-card shadow="hover" class="info-card">
           <template #header>
             <div class="card-header">
-              <span class="card-title">📋 训练记录详情</span>
+              <span class="card-title">训练记录详情</span>
               <el-tag type="info" size="small">ID: {{ trainingInfo?.id }}</el-tag>
             </div>
           </template>
@@ -50,6 +50,9 @@
             <el-card shadow="hover" class="score-card total-score">
               <div class="score-value">{{ reportData.total_score }}</div>
               <div class="score-label">总分</div>
+              <el-tag :type="getPerformanceTagType(reportData.performance_level)" effect="dark" class="performance-tag">
+                {{ getPerformanceLabel(reportData.performance_level) }}
+              </el-tag>
               <el-progress
                 :percentage="reportData.total_score"
                 :color="getScoreColor(reportData.total_score)"
@@ -60,24 +63,33 @@
           </el-col>
           <el-col :span="6">
             <el-card shadow="hover" class="score-card">
-              <div class="score-value" :style="{ color: getDimensionColor(reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score) }">
-                {{ reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score }}
+              <div
+                class="score-value"
+                :style="{ color: dimensionItems[0].hasData ? getDimensionColor(dimensionItems[0].score) : '#909399' }"
+              >
+                {{ dimensionItems[0].hasData ? dimensionItems[0].score : '暂无数据' }}
               </div>
               <div class="score-label">动作完整性</div>
             </el-card>
           </el-col>
           <el-col :span="6">
             <el-card shadow="hover" class="score-card">
-              <div class="score-value" :style="{ color: getDimensionColor(reportData.dimension_scores?.pose_standardization?.score ?? reportData.total_score * 0.95) }">
-                {{ reportData.dimension_scores?.pose_standardization?.score ?? Math.round(reportData.total_score * 0.95) }}
+              <div
+                class="score-value"
+                :style="{ color: dimensionItems[1].hasData ? getDimensionColor(dimensionItems[1].score) : '#909399' }"
+              >
+                {{ dimensionItems[1].hasData ? dimensionItems[1].score : '暂无数据' }}
               </div>
               <div class="score-label">姿态规范性</div>
             </el-card>
           </el-col>
           <el-col :span="6">
             <el-card shadow="hover" class="score-card">
-              <div class="score-value" :style="{ color: getDimensionColor(reportData.dimension_scores?.timeliness?.score ?? reportData.total_score * 0.9) }">
-                {{ reportData.dimension_scores?.timeliness?.score ?? Math.round(reportData.total_score * 0.9) }}
+              <div
+                class="score-value"
+                :style="{ color: dimensionItems[2].hasData ? getDimensionColor(dimensionItems[2].score) : '#909399' }"
+              >
+                {{ dimensionItems[2].hasData ? dimensionItems[2].score : '暂无数据' }}
               </div>
               <div class="score-label">操作时效性</div>
             </el-card>
@@ -90,9 +102,10 @@
           <el-col :span="10">
             <el-card shadow="hover" class="chart-card">
               <template #header>
-                <span class="card-title">📊 能力维度分析</span>
+                <span class="card-title">能力维度分析</span>
               </template>
-              <div ref="radarChartRef" class="radar-chart"></div>
+              <div v-if="hasDimensionData" ref="radarChartRef" class="radar-chart"></div>
+              <div v-else class="empty-state">暂无数据</div>
             </el-card>
           </el-col>
 
@@ -100,51 +113,57 @@
           <el-col :span="14">
             <el-card shadow="hover" class="steps-card">
               <template #header>
-                <span class="card-title">📝 步骤评分详情</span>
+                <span class="card-title">步骤评分详情</span>
               </template>
               <div class="steps-list">
-                <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-item">
-                  <div class="step-header">
-                    <span class="step-name">
-                      <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
-                      {{ step.step_name }}
-                    </span>
-                    <el-tag :type="getScoreTagType(step.score)" effect="dark">
-                      {{ step.score }}分
-                    </el-tag>
+                <template v-if="reportData.step_scores.length > 0">
+                  <div v-for="(step, index) in reportData.step_scores" :key="index" class="step-item">
+                    <div class="step-header">
+                      <span class="step-name">
+                        <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
+                        {{ step.step_name }}
+                      </span>
+                      <el-tag :type="getScoreTagType(step.score)" effect="dark">
+                        {{ step.score }}分
+                      </el-tag>
+                    </div>
+                    <el-progress
+                      :percentage="step.score"
+                      :color="getStepColor(step.score)"
+                      :stroke-width="6"
+                    />
+                    <p v-if="step.feedback" class="step-feedback">{{ step.feedback }}</p>
                   </div>
-                  <el-progress
-                    :percentage="step.score"
-                    :color="getStepColor(step.score)"
-                    :stroke-width="6"
-                  />
-                  <p v-if="step.feedback" class="step-feedback">{{ step.feedback }}</p>
-                </div>
+                </template>
+                <div v-else class="empty-state">暂无数据</div>
               </div>
             </el-card>
           </el-col>
         </el-row>
 
-        <!-- AI 改进建议 -->
-        <el-card v-if="suggestions.length > 0" shadow="hover" class="suggestions-card">
+        <!-- 改进建议 -->
+        <el-card shadow="hover" class="suggestions-card">
           <template #header>
-            <span class="card-title">💡 AI 改进建议</span>
+            <span class="card-title">训练改进建议</span>
           </template>
-          <el-alert
-            v-for="(suggestion, index) in suggestions"
-            :key="index"
-            :title="suggestion"
-            type="warning"
-            :closable="false"
-            show-icon
-            class="suggestion-item"
-          />
+          <template v-if="suggestions.length > 0">
+            <el-alert
+              v-for="(suggestion, index) in suggestions"
+              :key="index"
+              :title="suggestion"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="suggestion-item"
+            />
+          </template>
+          <div v-else class="empty-state">暂无数据</div>
         </el-card>
 
         <!-- 原始反馈 -->
         <el-card v-if="reportData.feedback" shadow="hover" class="feedback-card">
           <template #header>
-            <span class="card-title">📄 AI 详细反馈</span>
+            <span class="card-title">详细反馈</span>
           </template>
           <div class="feedback-content">{{ reportData.feedback }}</div>
         </el-card>
@@ -154,14 +173,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTrainingDetail } from '@/api/training'
+import { getTrainingTypeLabel } from '@/utils/trainingType'
 import * as echarts from 'echarts'
+import {
+  extractPerformanceLevel,
+  extractStepScores,
+  getDimensionItems,
+  getPerformanceLabel,
+  getPerformanceTagType,
+  hasDimensionScores,
+  normalizeSuggestions
+} from '@/utils/trainingReport'
 
 const route = useRoute()
-const router = useRouter()
 
 const loading = ref(false)
 const radarChartRef = ref(null)
@@ -173,13 +201,17 @@ const trainingInfo = ref(null)
 // 报告数据
 const reportData = reactive({
   total_score: 0,
+  performance_level: null,
   dimension_scores: null,
   step_scores: [],
-  feedback: ''
+  feedback: '',
+  analysis_summary: null
 })
 
 // 建议列表
 const suggestions = ref([])
+const dimensionItems = computed(() => getDimensionItems(reportData.dimension_scores))
+const hasDimensionData = computed(() => hasDimensionScores(reportData.dimension_scores))
 
 // 加载报告数据
 const loadReportData = async () => {
@@ -192,32 +224,20 @@ const loadReportData = async () => {
     
     // 解析评分数据
     reportData.total_score = parseFloat(res.total_score) || 0
+    reportData.performance_level = extractPerformanceLevel(res)
     reportData.dimension_scores = res.dimension_scores || null
     reportData.feedback = res.feedback || ''
+    reportData.analysis_summary = res.analysis_summary || null
     
-    // 解析步骤分数
-    if (res.step_scores) {
-      reportData.step_scores = Object.entries(res.step_scores)
-        .filter(([key]) => !key.startsWith('_'))
-        .map(([key, value]) => ({
-          step_name: value.step_name || `步骤${key.replace('step', '')}`,
-          score: parseFloat(value.score) || 0,
-          feedback: value.feedback || ''
-        }))
-    }
+    reportData.step_scores = extractStepScores(res.step_scores)
     
-    // AI 建议
-    if (res.suggestions && res.suggestions.length > 0) {
-      suggestions.value = res.suggestions
-    } else {
-      suggestions.value = []
-    }
+    suggestions.value = normalizeSuggestions(res.suggestions)
     
     // 渲染图表
     renderRadarChart()
   } catch (error) {
     console.error('加载报告失败:', error)
-    ElMessage.error('加载报告失败: ' + error.message)
+    ElMessage.error(error.customMessage || error.response?.data?.detail || '加载报告失败')
   } finally {
     loading.value = false
   }
@@ -225,14 +245,17 @@ const loadReportData = async () => {
 
 // 渲染雷达图
 const renderRadarChart = () => {
-  if (!radarChartRef.value) return
+  radarChart?.dispose()
+  radarChart = null
+
+  if (!radarChartRef.value || !hasDimensionData.value) return
   
   radarChart = echarts.init(radarChartRef.value)
   
   const dimensions = [
-    { name: '动作完整性', score: reportData.dimension_scores?.action_completeness?.score ?? reportData.total_score },
-    { name: '姿态规范性', score: reportData.dimension_scores?.pose_standardization?.score ?? reportData.total_score * 0.95 },
-    { name: '操作时效性', score: reportData.dimension_scores?.timeliness?.score ?? reportData.total_score * 0.9 },
+    { name: '动作完整性', score: dimensionItems.value[0].score ?? 0 },
+    { name: '姿态规范性', score: dimensionItems.value[1].score ?? 0 },
+    { name: '操作时效性', score: dimensionItems.value[2].score ?? 0 },
     { name: '总体评分', score: reportData.total_score }
   ]
   
@@ -268,14 +291,6 @@ const renderRadarChart = () => {
 }
 
 // 辅助方法
-const getTrainingTypeLabel = (type) => {
-  const labels = {
-    'fire_extinguisher': '灭火器操作',
-    'extinguisher': '灭火器操作'
-  }
-  return labels[type] || type
-}
-
 const getStatusType = (status) => {
   const types = {
     'done': 'success',
@@ -431,9 +446,23 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
+.performance-tag {
+  margin-bottom: 12px;
+}
+
 /* 雷达图 */
 .radar-chart {
   height: 350px;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
 }
 
 /* 步骤列表 */

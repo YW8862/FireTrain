@@ -1,88 +1,63 @@
 <template>
-  <div class="home-container">
-    <div class="main-content">
-      <el-card class="welcome-card">
-        <div class="welcome-content">
-          <div class="welcome-icon">
-            <el-icon :size="120"><video-camera /></el-icon>
-          </div>
-          <h2 class="welcome-title">欢迎使用消防技能训练系统</h2>
-          <p class="welcome-subtitle">智能评估 · 规范操作 · 安全训练</p>
-          
-          <div class="features">
-            <el-row :gutter="40">
-              <el-col :span="8">
-                <div class="feature-item">
-                  <el-icon :size="48" color="#409EFF"><video-camera /></el-icon>
-                  <h3>AI 智能评估</h3>
-                  <p>基于计算机视觉技术，实时分析操作动作</p>
-                </div>
-              </el-col>
-              <el-col :span="8">
-                <div class="feature-item">
-                  <el-icon :size="48" color="#67C23A"><document-checked /></el-icon>
-                  <h3>标准化流程</h3>
-                  <p>严格按照消防操作规范，培养正确习惯</p>
-                </div>
-              </el-col>
-              <el-col :span="8">
-                <div class="feature-item">
-                  <el-icon :size="48" color="#E6A23C"><data-line /></el-icon>
-                  <h3>数据统计分析</h3>
-                  <p>记录训练历史，可视化展示进步轨迹</p>
-                </div>
-              </el-col>
-            </el-row>
+  <div class="app-page home-page">
+    <NavBar />
+    <div class="app-shell home-shell">
+      <section class="hero-section">
+        <div class="hero-copy">
+          <div class="hero-meta">
+            <img :src="flameSymbol" alt="" class="meta-icon" />
+            <span>消防实操训练</span>
           </div>
 
-          <div class="action-buttons">
-            <el-button 
-              type="primary" 
-              size="large" 
-              @click="goToTraining"
-              class="start-btn"
-            >
-              <el-icon><video-play /></el-icon>
-              去训练
+          <h1 class="hero-title">灭火器实操训练测评系统</h1>
+          <p class="hero-subtitle">
+            聚焦训练本身。进入实操训练，完成动作记录，查看测评结果。
+          </p>
+
+          <div class="hero-actions">
+            <el-button type="primary" size="large" class="hero-primary" @click="goToTraining">
+              <el-icon><VideoPlay /></el-icon>
+              开始训练
             </el-button>
-            
-            <el-button 
-              size="large" 
-              @click="viewHistory"
-              class="secondary-btn"
-            >
-              <el-icon><document /></el-icon>
-              查看历史记录
+            <el-button size="large" @click="viewHistory">
+              <el-icon><Document /></el-icon>
+              训练记录
+            </el-button>
+            <el-button size="large" @click="goToStats">
+              <el-icon><DataLine /></el-icon>
+              训练统计
             </el-button>
           </div>
+
+          <div class="hero-note">
+            <el-icon><WarningFilled /></el-icon>
+            <span>训练前请确认设备、场地与人员站位安全，保持完整入镜。</span>
+          </div>
         </div>
-      </el-card>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="visual-ring"></div>
+          <img :src="fireExtinguisherSymbol" alt="" class="visual-extinguisher" />
+          <img :src="flameSymbol" alt="" class="visual-flame" />
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
-  VideoCamera, 
-  DocumentChecked, 
   DataLine,
   VideoPlay,
   Document,
-  ArrowDown,
-  UserFilled
+  WarningFilled
 } from '@element-plus/icons-vue'
-import { useUserStore } from '@/store/user'
+import NavBar from '@/components/NavBar.vue'
+import fireExtinguisherSymbol from '@/assets/illustrations/fire-extinguisher-symbol.svg'
+import flameSymbol from '@/assets/illustrations/flame-symbol.svg'
 
 const router = useRouter()
-const userStore = useUserStore()
-
-// 用户信息
-const userName = computed(() => {
-  return userStore.user?.username || '用户'
-})
 
 // 跳转到训练页面
 const goToTraining = () => {
@@ -93,132 +68,186 @@ const goToTraining = () => {
 const viewHistory = () => {
   router.push('/history')
 }
+
+const goToStats = () => {
+  router.push('/stats')
+}
 </script>
 
 <style scoped>
-.home-container {
+.home-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  flex-direction: column;
 }
 
-/* 主内容区 */
-.main-content {
-  padding: 60px 20px;
+.home-shell {
+  min-height: calc(100vh - 82px);
   display: flex;
-  justify-content: center;
+  align-items: stretch;
+}
+
+.hero-section {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 130px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 520px);
+  gap: 32px;
   align-items: center;
-  flex: 1;
-  width: 100%;
+  padding: 32px 8px 20px;
 }
 
-.welcome-card {
-  max-width: 1000px;
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
+.hero-copy {
+  max-width: 720px;
 }
 
-.welcome-content {
-  padding: 60px 40px;
-  text-align: center;
+.hero-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(22, 50, 125, 0.08);
+  border: 1px solid rgba(22, 50, 125, 0.12);
+  color: var(--ft-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.welcome-icon {
-  margin-bottom: 30px;
-  color: #E6A23C;
-  animation: pulse 2s infinite;
+.meta-icon {
+  width: 18px;
+  height: 18px;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
+.hero-title {
+  margin: 20px 0 0;
+  font-size: 64px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--ft-color-text-primary);
+  max-width: 760px;
 }
 
-.welcome-title {
-  font-size: 36px;
-  color: #303133;
-  margin: 0 0 15px 0;
-  font-weight: 600;
-}
-
-.welcome-subtitle {
+.hero-subtitle {
+  margin: 22px 0 0;
+  max-width: 580px;
+  color: var(--ft-color-text-secondary);
+  line-height: 1.9;
   font-size: 18px;
-  color: #909399;
-  margin: 0 0 50px 0;
 }
 
-.features {
-  margin-bottom: 50px;
-}
-
-.feature-item {
-  padding: 30px 20px;
-  text-align: center;
-}
-
-.feature-item h3 {
-  margin: 15px 0 10px 0;
-  font-size: 20px;
-  color: #303133;
-}
-
-.feature-item p {
-  font-size: 14px;
-  color: #909399;
-  line-height: 1.6;
-}
-
-.action-buttons {
+.hero-actions {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 34px;
+}
+
+.hero-primary {
+  min-width: 160px;
+}
+
+.hero-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 28px;
+  padding: 14px 16px;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--ft-color-border);
+  box-shadow: var(--ft-shadow-sm);
+  color: var(--ft-color-text-secondary);
+}
+
+.hero-visual {
+  position: relative;
+  min-height: 520px;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
-.start-btn {
-  padding: 15px 40px;
-  font-size: 18px;
-  height: auto;
+.visual-ring {
+  position: absolute;
+  width: min(32vw, 460px);
+  height: min(32vw, 460px);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(217, 33, 33, 0.12) 0%, rgba(245, 158, 11, 0.08) 45%, rgba(255, 255, 255, 0) 72%);
 }
 
-.secondary-btn {
-  padding: 15px 40px;
-  font-size: 18px;
-  height: auto;
+.visual-extinguisher {
+  position: relative;
+  width: min(26vw, 340px);
+  max-width: 100%;
+  filter: drop-shadow(0 20px 40px rgba(15, 23, 42, 0.12));
+  z-index: 2;
 }
 
-/* 响应式设计 */
+.visual-flame {
+  position: absolute;
+  right: 4%;
+  top: 10%;
+  width: min(12vw, 120px);
+  opacity: 0.92;
+  filter: drop-shadow(0 12px 24px rgba(217, 33, 33, 0.18));
+}
+
+@media (max-width: 1024px) {
+  .hero-section {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    padding-top: 24px;
+  }
+
+  .hero-title {
+    font-size: 52px;
+  }
+
+  .hero-visual {
+    min-height: 360px;
+    order: -1;
+  }
+
+  .visual-ring {
+    width: 320px;
+    height: 320px;
+  }
+}
+
 @media (max-width: 768px) {
-  .main-content {
-    padding: 40px 20px;
+  .hero-title {
+    font-size: 38px;
   }
 
-  .welcome-title {
-    font-size: 28px;
-  }
-
-  .welcome-subtitle {
+  .hero-subtitle {
     font-size: 16px;
   }
 
-  .feature-item h3 {
-    font-size: 18px;
-  }
-
-  .action-buttons {
+  .hero-actions {
     flex-direction: column;
+    align-items: stretch;
   }
 
-  .start-btn,
-  .secondary-btn {
+  .hero-note {
     width: 100%;
+    align-items: flex-start;
+  }
+
+  .hero-visual {
+    min-height: 280px;
+  }
+
+  .visual-extinguisher {
+    width: 200px;
+  }
+
+  .visual-flame {
+    width: 72px;
   }
 }
 </style>
