@@ -14,9 +14,9 @@
         </div>
       </template>
 
-      <div v-loading="loading" class="stats-content">
+      <div class="stats-content">
         <!-- 个人统计概览 -->
-        <el-row :gutter="20" class="mb-4">
+        <el-row :gutter="20" class="mb-4" v-loading="personalLoading">
           <el-col :span="6">
             <el-statistic title="训练总次数" :value="stats.total_training_count">
               <template #suffix>次</template>
@@ -38,7 +38,7 @@
         </el-row>
 
         <!-- 成绩趋势图 -->
-        <el-card shadow="hover" class="mb-4">
+        <el-card shadow="hover" class="mb-4" v-loading="trendLoading">
           <template #header>
             <div class="chart-header">
               <span>实操得分趋势（最近 {{ trendDays }} 天）</span>
@@ -55,7 +55,7 @@
         <!-- 步骤分对比图 -->
         <el-row :gutter="20" class="mb-4">
           <el-col :span="12">
-            <el-card shadow="hover">
+            <el-card shadow="hover" v-loading="stepLoading">
               <template #header>
                 <span>各步骤得分分布</span>
               </template>
@@ -63,7 +63,7 @@
             </el-card>
           </el-col>
           <el-col :span="12">
-            <el-card shadow="hover">
+            <el-card shadow="hover" v-loading="stepLoading">
               <template #header>
                 <span>能力维度概览</span>
               </template>
@@ -73,7 +73,7 @@
         </el-row>
 
         <!-- 步骤分析 -->
-        <el-card shadow="hover" v-if="stepAnalysis && stepAnalysis.length > 0">
+        <el-card shadow="hover" v-loading="stepLoading" v-if="stepAnalysis && stepAnalysis.length > 0">
           <template #header>
             <div class="card-header">
               <span>步骤表现分析</span>
@@ -112,21 +112,35 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts'
 import {
-  getPersonalStatistics,
+  getStatisticsOverview,
   getTrainingTrend,
-  getStepAnalysis,
-  getTrainingHistory
+  getStepAnalysis
 } from '@/api/statistics'
 import NavBar from '@/components/NavBar.vue'
 
-const router = useRouter()
+let echarts = null
+let echartsLoader = null
 
-const loading = ref(false)
+const ensureEcharts = async () => {
+  if (echarts) return echarts
+  if (!echartsLoader) {
+    echartsLoader = import('echarts').then((mod) => {
+      echarts = mod
+      return mod
+    })
+  }
+  return echartsLoader
+}
+
+const personalLoading = ref(false)
+const trendLoading = ref(false)
+const stepLoading = ref(false)
+const loading = computed(() =>
+  personalLoading.value || trendLoading.value || stepLoading.value
+)
 const trendDays = ref(7)
 const trendChartRef = ref(null)
 const stepBarChartRef = ref(null)
@@ -170,6 +184,23 @@ const resetPersonalStats = () => {
   stats.last_training_date = null
 }
 
+const applyPersonalStats = (res = {}) => {
+  stats.total_training_count = res.total_training_count || res.total_trainings || 0
+  stats.average_score = parseFloat(res.average_score) || 0
+  stats.best_score = parseFloat(res.best_score) || 0
+  stats.last_training_date = res.last_training_date || res.last_training_at || null
+}
+
+const applyOverviewData = async (overview = {}) => {
+  applyPersonalStats(overview.personal_stats || {})
+  stepAnalysis.value = normalizeStepAnalysis(overview.step_analysis?.step_analysis || [])
+  await Promise.all([
+    renderTrendChart(overview.recent_trend?.trend_data || []),
+    renderStepBarChart(stepAnalysis.value),
+    renderRadarChart(stepAnalysis.value)
+  ])
+}
+
 const buildEmptyChartGraphic = (text) => ({
   type: 'text',
   left: 'center',
@@ -207,74 +238,81 @@ const formatDate = (dateString) => {
 
 // 加载所有数据
 const loadData = async () => {
-  loading.value = true
+  personalLoading.value = true
+  trendLoading.value = true
+  stepLoading.value = true
   try {
-    await Promise.all([
-      loadPersonalStats(),
-      loadTrendData(),
-      loadStepAnalysis()
-    ])
+    const overview = await getStatisticsOverview(trendDays.value)
+    await applyOverviewData(overview)
   } catch (error) {
     console.error('加载数据失败:', error)
     ElMessage.error(error.response?.data?.detail || '加载数据失败')
+    resetPersonalStats()
+    stepAnalysis.value = []
   } finally {
-    loading.value = false
+    personalLoading.value = false
+    trendLoading.value = false
+    stepLoading.value = false
   }
 }
 
 // 加载个人统计
 const loadPersonalStats = async () => {
+  personalLoading.value = true
   try {
-    const res = await getPersonalStatistics()
-    stats.total_training_count = res.total_training_count || res.total_trainings || 0
-    stats.average_score = parseFloat(res.average_score) || 0
-    stats.best_score = parseFloat(res.best_score) || 0
-    stats.last_training_date = res.last_training_date || res.last_training_at || null
+    const overview = await getStatisticsOverview(trendDays.value)
+    applyPersonalStats(overview.personal_stats || {})
   } catch (error) {
     resetPersonalStats()
     console.error('加载个人统计失败:', error)
+  } finally {
+    personalLoading.value = false
   }
 }
 
 // 加载趋势数据
 const loadTrendData = async () => {
+  trendLoading.value = true
   try {
     const res = await getTrainingTrend(trendDays.value)
-    renderTrendChart(res.trend_data)
+    await renderTrendChart(res.trend_data || [])
   } catch (error) {
     console.error('加载趋势数据失败:', error)
+  } finally {
+    trendLoading.value = false
   }
 }
 
 // 加载步骤分析
 const loadStepAnalysis = async () => {
+  stepLoading.value = true
   try {
     const res = await getStepAnalysis()
     stepAnalysis.value = normalizeStepAnalysis(res.step_analysis || [])
-    renderStepBarChart(stepAnalysis.value)
-    renderRadarChart(stepAnalysis.value)
+    await Promise.all([
+      renderStepBarChart(stepAnalysis.value),
+      renderRadarChart(stepAnalysis.value)
+    ])
   } catch (error) {
     console.error('加载步骤分析失败:', error)
+  } finally {
+    stepLoading.value = false
   }
-}
-
-// 跳转到训练页面
-const goToTraining = () => {
-  router.push('/training')
 }
 
 // 渲染趋势图（折线图）
-const renderTrendChart = (data) => {
+const renderTrendChart = async (data) => {
   if (!trendChartRef.value) return
-  
+  const chartLib = await ensureEcharts()
+
   if (!trendChart) {
-    trendChart = echarts.init(trendChartRef.value)
+    trendChart = chartLib.init(trendChartRef.value)
   }
-  
+
   const dates = data.map(item => item.date)
   const scores = data.map(item => item.average_score)
   const counts = data.map(item => item.training_count)
-  
+
   const option = {
     tooltip: {
       trigger: 'axis',
@@ -329,7 +367,7 @@ const renderTrendChart = (data) => {
           color: '#409EFF'
         },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new chartLib.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(64, 158, 255, 0.5)' },
             { offset: 1, color: 'rgba(64, 158, 255, 0.1)' }
           ])
@@ -352,11 +390,12 @@ const renderTrendChart = (data) => {
 }
 
 // 渲染步骤对比图（柱状图）
-const renderStepBarChart = (data) => {
+const renderStepBarChart = async (data) => {
   if (!stepBarChartRef.value) return
-  
+  const chartLib = await ensureEcharts()
+
   if (!stepBarChart) {
-    stepBarChart = echarts.init(stepBarChartRef.value)
+    stepBarChart = chartLib.init(stepBarChartRef.value)
   }
 
   if (!data.length) {
@@ -421,7 +460,7 @@ const renderStepBarChart = (data) => {
         type: 'bar',
         data: scores,
         itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new chartLib.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: '#409EFF' },
             { offset: 1, color: '#409EFFaa' }
           ])
@@ -439,11 +478,12 @@ const renderStepBarChart = (data) => {
 }
 
 // 渲染雷达图
-const renderRadarChart = (data) => {
+const renderRadarChart = async (data) => {
   if (!radarChartRef.value) return
-  
+  const chartLib = await ensureEcharts()
+
   if (!radarChart) {
-    radarChart = echarts.init(radarChartRef.value)
+    radarChart = chartLib.init(radarChartRef.value)
   }
 
   if (!data.length) {
@@ -553,20 +593,26 @@ const renderRadarChart = (data) => {
   radarChart.setOption(option)
 }
 
-// 组件挂载时加载数据
-onMounted(() => {
-  loadData()
-})
-
-// 窗口大小变化时重新渲染图表
-window.addEventListener('resize', () => {
+const handleResize = () => {
   trendChart && trendChart.resize()
   stepBarChart && stepBarChart.resize()
   radarChart && radarChart.resize()
+}
+
+// 组件挂载时加载数据
+onMounted(() => {
+  // 先让页面完成切换和首屏渲染，再异步加载统计数据与图表资源。
+  requestAnimationFrame(() => {
+    loadData()
+  })
 })
+
+// 窗口大小变化时重新渲染图表
+window.addEventListener('resize', handleResize)
 
 // 组件卸载时清理图表
 onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
   trendChart && trendChart.dispose()
   stepBarChart && stepBarChart.dispose()
   radarChart && radarChart.dispose()

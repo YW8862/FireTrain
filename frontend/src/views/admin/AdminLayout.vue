@@ -5,7 +5,7 @@
         <div class="admin-brand">
           <div class="admin-brand-mark">FT</div>
           <div>
-            <h2>灭火器实操训练测评系统后台管理</h2>
+            <h2>智能消防训练评测系统后台管理</h2>
             <p>训练数据、用户信息与视频分析管理</p>
           </div>
         </div>
@@ -24,7 +24,7 @@
             <el-dropdown-menu>
               <el-dropdown-item v-if="canSwitchToUser" command="switch-to-user">
                 <el-icon><User /></el-icon>
-                切换到用户模式
+                切换用户空间
               </el-dropdown-item>
               <el-dropdown-item command="profile">个人中心</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>

@@ -3,7 +3,7 @@
     <div class="brand-block" @click="goToHome">
       <div class="brand-mark">FT</div>
       <div>
-        <h1 class="logo-title">灭火器实操训练测评系统</h1>
+        <h1 class="logo-title">智能消防训练评测系统</h1>
         <p class="logo-subtitle">规范操作 · 训练记录 · 实操测评</p>
       </div>
     </div>
@@ -33,7 +33,7 @@
             <!-- 显示切换回管理员模式选项 -->
             <el-dropdown-item v-if="canSwitchBack" command="switch-back">
               <el-icon><Monitor /></el-icon>
-              切换回管理员模式
+              切换管理员空间
             </el-dropdown-item>
             <el-dropdown-item command="profile">个人中心</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>

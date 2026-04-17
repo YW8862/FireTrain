@@ -1,9 +1,9 @@
 """训练记录相关的 Repository 层"""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.training_record import TrainingRecord
@@ -38,6 +38,89 @@ class TrainingRepository:
             .order_by(TrainingRecord.created_at.desc())
         )
         return result.scalars().all()
+
+    async def get_personal_statistics_summary(
+        self,
+        user_id: int,
+        completed_statuses: list[str],
+    ) -> Dict[str, Any]:
+        """使用数据库聚合获取个人统计摘要。"""
+        completed_condition = TrainingRecord.status.in_(completed_statuses)
+        timestamp_expr = func.coalesce(
+            TrainingRecord.completed_at,
+            TrainingRecord.started_at,
+            TrainingRecord.created_at,
+        )
+
+        query = select(
+            func.count(TrainingRecord.id).label("total_trainings"),
+            func.sum(case((completed_condition, 1), else_=0)).label("completed_trainings"),
+            func.sum(case((completed_condition, TrainingRecord.duration_seconds), else_=0)).label(
+                "total_training_seconds"
+            ),
+            func.avg(case((completed_condition, TrainingRecord.total_score), else_=None)).label("average_score"),
+            func.max(case((completed_condition, TrainingRecord.total_score), else_=None)).label("best_score"),
+            func.max(timestamp_expr).label("last_training_at"),
+        ).where(TrainingRecord.user_id == user_id)
+
+        result = await self.session.execute(query)
+        row = result.mappings().one()
+        return dict(row)
+
+    async def get_training_trend_summary(
+        self,
+        user_id: int,
+        start_date: date,
+        completed_statuses: list[str],
+    ) -> List[Dict[str, Any]]:
+        """按日期聚合训练趋势，仅返回需要的统计字段。"""
+        timestamp_expr = func.coalesce(
+            TrainingRecord.completed_at,
+            TrainingRecord.started_at,
+            TrainingRecord.created_at,
+        )
+        date_expr = func.date(timestamp_expr)
+
+        query = (
+            select(
+                date_expr.label("date"),
+                func.count(TrainingRecord.id).label("training_count"),
+                func.avg(TrainingRecord.total_score).label("average_score"),
+                func.max(TrainingRecord.total_score).label("best_score"),
+            )
+            .where(
+                TrainingRecord.user_id == user_id,
+                TrainingRecord.status.in_(completed_statuses),
+                timestamp_expr >= datetime.combine(start_date, datetime.min.time()),
+            )
+            .group_by(date_expr)
+            .order_by(date_expr.asc())
+        )
+
+        result = await self.session.execute(query)
+        return [dict(row) for row in result.mappings().all()]
+
+    async def get_completed_step_scores_by_user_id(
+        self,
+        user_id: int,
+        completed_statuses: list[str],
+    ) -> List[Dict[str, Any]]:
+        """仅返回已完成训练的 step_scores，减少统计分析的数据载荷。"""
+        query = (
+            select(TrainingRecord.step_scores)
+            .where(
+                TrainingRecord.user_id == user_id,
+                TrainingRecord.status.in_(completed_statuses),
+                TrainingRecord.step_scores.is_not(None),
+            )
+            .order_by(TrainingRecord.created_at.desc())
+        )
+        result = await self.session.execute(query)
+        return [
+            row.step_scores
+            for row in result.all()
+            if isinstance(row.step_scores, dict)
+        ]
     
     async def update(
         self,
@@ -107,7 +190,6 @@ class TrainingRepository:
         query = query.order_by(TrainingRecord.created_at.desc())
         
         # 获取总数
-        from sqlalchemy import func
         count_query = select(func.count(TrainingRecord.id)).where(TrainingRecord.user_id == user_id)
         if conditions:
             count_query = count_query.where(and_(*conditions))
@@ -224,16 +306,12 @@ class TrainingRepository:
     
     async def count_all(self) -> int:
         """统计所有训练记录数量"""
-        from sqlalchemy import select, func
-        
         count_query = select(func.count(TrainingRecord.id))
         result = await self.session.execute(count_query)
         return result.scalar()
     
     async def count_by_date_range(self, start_date: datetime, end_date: datetime) -> int:
         """统计指定日期范围内的训练记录数量"""
-        from sqlalchemy import select, func
-        
         count_query = select(func.count(TrainingRecord.id)).where(
             TrainingRecord.created_at >= start_date,
             TrainingRecord.created_at < end_date
@@ -243,8 +321,6 @@ class TrainingRepository:
     
     async def get_average_score(self) -> Optional[float]:
         """获取平均分数"""
-        from sqlalchemy import select, func
-        
         avg_query = select(func.avg(TrainingRecord.total_score)).where(
             TrainingRecord.total_score.isnot(None)
         )

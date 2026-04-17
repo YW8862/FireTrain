@@ -81,15 +81,13 @@ async def get_statistics_overview(
     包含个人统计、近期趋势和步骤分析的完整数据
     适用于首页看板展示
     """
-    personal_stats = await stats_service.get_personal_statistics(current_user_id)
-    trend_data = await stats_service.get_training_trend(current_user_id, days=days)
-    step_analysis = await stats_service.get_step_analysis(current_user_id)
+    overview = await stats_service.get_statistics_overview(current_user_id, days=days)
     
     return StatisticsOverviewResponse(
-        personal_stats=personal_stats,
+        personal_stats=overview["personal_stats"],
         recent_trend=TrainingTrendResponse(
-            trend_data=trend_data,
-            total_days=len(trend_data)
+            trend_data=overview["recent_trend"],
+            total_days=len(overview["recent_trend"])
         ),
-        step_analysis=StepAnalysisResponse(step_analysis=step_analysis)
+        step_analysis=StepAnalysisResponse(step_analysis=overview["step_analysis"])
     )

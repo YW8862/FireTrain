@@ -9,7 +9,7 @@
             <span>消防实操训练</span>
           </div>
 
-          <h1 class="hero-title">灭火器实操训练测评系统</h1>
+          <h1 class="hero-title">智能消防实操训练测评系统</h1>
           <p class="hero-subtitle">
             聚焦训练本身。进入实操训练，完成动作记录，查看测评结果。
           </p>
@@ -122,7 +122,7 @@ const goToStats = () => {
 
 .hero-title {
   margin: 20px 0 0;
-  font-size: 64px;
+  font-size: 60px;
   line-height: 1.08;
   letter-spacing: -0.03em;
   color: var(--ft-color-text-primary);

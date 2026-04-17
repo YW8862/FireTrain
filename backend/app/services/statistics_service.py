@@ -105,38 +105,11 @@ class StatisticsService:
             last_training_at=None,
         )
 
-    async def get_user_statistics(self, user_id: int) -> Dict:
-        """
-        获取用户统计数据
-
-        Args:
-            user_id: 用户ID
-
-        Returns:
-            用户统计数据字典
-        """
-        personal_stats = await self.get_personal_statistics(user_id)
-        recent_trend = await self.get_training_trend(user_id, days=7)
-        recent_trainings = sum(item.training_count for item in recent_trend)
-
-        total_trainings = personal_stats.total_trainings
-        completed_trainings = personal_stats.completed_trainings
-
-        return {
-            "total_trainings": total_trainings,
-            "completed_trainings": completed_trainings,
-            "average_score": float(personal_stats.average_score),
-            "highest_score": float(personal_stats.best_score),
-            "recent_trainings_7d": recent_trainings,
-            "completion_rate": round(
-                (completed_trainings / total_trainings * 100) if total_trainings > 0 else 0,
-                2,
-            ),
-        }
-
-    async def get_personal_statistics(self, user_id: int) -> PersonalStatisticsResponse:
-        """获取个人统计数据。"""
-        trainings = await self.training_repo.get_by_user_id(user_id)
+    def _build_personal_statistics_from_trainings(
+        self,
+        user_id: int,
+        trainings: List[Any],
+    ) -> PersonalStatisticsResponse:
         if not trainings:
             return self._build_empty_personal_statistics(user_id)
 
@@ -166,10 +139,30 @@ class StatisticsService:
             last_training_at=max(timestamps) if timestamps else None,
         )
 
-    async def get_training_trend(self, user_id: int, days: int = 7) -> List[TrainingTrendItem]:
-        """获取最近 N 天的训练趋势。"""
-        trainings = await self.training_repo.get_by_user_id(user_id)
+    def _build_personal_statistics_from_summary(
+        self,
+        user_id: int,
+        summary: Dict[str, Any],
+    ) -> PersonalStatisticsResponse:
+        total_trainings = int(summary.get("total_trainings") or 0)
+        if total_trainings == 0:
+            return self._build_empty_personal_statistics(user_id)
 
+        return PersonalStatisticsResponse(
+            user_id=user_id,
+            total_trainings=total_trainings,
+            completed_trainings=int(summary.get("completed_trainings") or 0),
+            total_training_seconds=self._to_decimal(summary.get("total_training_seconds") or 0),
+            average_score=self._to_decimal(summary.get("average_score") or 0),
+            best_score=self._to_decimal(summary.get("best_score") or 0),
+            last_training_at=summary.get("last_training_at"),
+        )
+
+    def _build_training_trend_from_trainings(
+        self,
+        trainings: List[Any],
+        days: int,
+    ) -> List[TrainingTrendItem]:
         today = datetime.utcnow().date()
         start_date = today - timedelta(days=days - 1)
         buckets: Dict[str, Dict[str, Any]] = {}
@@ -207,9 +200,46 @@ class StatisticsService:
 
         return trend_items
 
-    async def get_step_analysis(self, user_id: int) -> List[StepAnalysisItem]:
-        """获取用户各步骤表现分析。"""
-        trainings = await self.training_repo.get_by_user_id(user_id)
+    def _build_training_trend_from_summary(
+        self,
+        trend_rows: List[Dict[str, Any]],
+        days: int,
+    ) -> List[TrainingTrendItem]:
+        today = datetime.utcnow().date()
+        start_date = today - timedelta(days=days - 1)
+        bucket_map: Dict[str, Dict[str, Any]] = {
+            (start_date + timedelta(days=offset)).isoformat(): {
+                "training_count": 0,
+                "average_score": self.ZERO_DECIMAL,
+                "best_score": None,
+            }
+            for offset in range(days)
+        }
+
+        for row in trend_rows:
+            date_key = str(row.get("date"))
+            if date_key not in bucket_map:
+                continue
+            bucket_map[date_key] = {
+                "training_count": int(row.get("training_count") or 0),
+                "average_score": self._to_decimal(row.get("average_score") or 0),
+                "best_score": self._to_decimal(row["best_score"]) if row.get("best_score") is not None else None,
+            }
+
+        return [
+            TrainingTrendItem(
+                date=date_key,
+                training_count=bucket["training_count"],
+                average_score=bucket["average_score"],
+                best_score=bucket["best_score"],
+            )
+            for date_key, bucket in bucket_map.items()
+        ]
+
+    def _build_step_analysis_from_trainings(
+        self,
+        trainings: List[Any],
+    ) -> List[StepAnalysisItem]:
         step_buckets: Dict[str, Dict[str, Any]] = {}
 
         for training in trainings:
@@ -267,6 +297,130 @@ class StatisticsService:
 
         analysis.sort(key=lambda item: (item.average_score, item.step_name))
         return analysis
+
+    def _build_step_analysis_from_step_scores(
+        self,
+        step_scores_list: List[Dict[str, Any]],
+    ) -> List[StepAnalysisItem]:
+        step_buckets: Dict[str, Dict[str, Any]] = {}
+
+        for step_scores in step_scores_list:
+            for step_key, step_data in step_scores.items():
+                if step_key.startswith("_") or not isinstance(step_data, dict):
+                    continue
+
+                score = step_data.get("score")
+                if score is None:
+                    continue
+
+                step_name = step_data.get("step_name") or step_key
+                bucket = step_buckets.setdefault(
+                    step_name,
+                    {"scores": [], "success_count": 0, "training_count": 0},
+                )
+
+                numeric_score = Decimal(str(score))
+                bucket["scores"].append(numeric_score)
+                bucket["training_count"] += 1
+
+                is_correct = step_data.get("is_correct")
+                if isinstance(is_correct, bool):
+                    bucket["success_count"] += int(is_correct)
+                elif numeric_score >= Decimal("60"):
+                    bucket["success_count"] += 1
+
+        analysis: List[StepAnalysisItem] = []
+        for step_name, bucket in step_buckets.items():
+            training_count = bucket["training_count"]
+            if training_count == 0:
+                continue
+
+            average_score = sum(bucket["scores"]) / training_count
+            success_rate = Decimal(bucket["success_count"] * 100) / Decimal(training_count)
+
+            analysis.append(
+                StepAnalysisItem(
+                    step_name=step_name,
+                    average_score=self._to_decimal(average_score),
+                    success_rate=self._to_decimal(success_rate),
+                    improvement_suggestion=self._build_improvement_suggestion(
+                        self._to_decimal(average_score),
+                        self._to_decimal(success_rate),
+                    ),
+                )
+            )
+
+        analysis.sort(key=lambda item: (item.average_score, item.step_name))
+        return analysis
+
+    async def get_user_statistics(self, user_id: int) -> Dict:
+        """
+        获取用户统计数据
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            用户统计数据字典
+        """
+        personal_stats = await self.get_personal_statistics(user_id)
+        recent_trend = await self.get_training_trend(user_id, days=7)
+        recent_trainings = sum(item.training_count for item in recent_trend)
+
+        total_trainings = personal_stats.total_trainings
+        completed_trainings = personal_stats.completed_trainings
+
+        return {
+            "total_trainings": total_trainings,
+            "completed_trainings": completed_trainings,
+            "average_score": float(personal_stats.average_score),
+            "highest_score": float(personal_stats.best_score),
+            "recent_trainings_7d": recent_trainings,
+            "completion_rate": round(
+                (completed_trainings / total_trainings * 100) if total_trainings > 0 else 0,
+                2,
+            ),
+        }
+
+    async def get_personal_statistics(self, user_id: int) -> PersonalStatisticsResponse:
+        """获取个人统计数据。"""
+        summary = await self.training_repo.get_personal_statistics_summary(
+            user_id,
+            sorted(self.COMPLETED_STATUSES),
+        )
+        return self._build_personal_statistics_from_summary(user_id, summary)
+
+    async def get_training_trend(self, user_id: int, days: int = 7) -> List[TrainingTrendItem]:
+        """获取最近 N 天的训练趋势。"""
+        start_date = datetime.utcnow().date() - timedelta(days=days - 1)
+        summary = await self.training_repo.get_training_trend_summary(
+            user_id,
+            start_date,
+            sorted(self.COMPLETED_STATUSES),
+        )
+        return self._build_training_trend_from_summary(summary, days)
+
+    async def get_step_analysis(self, user_id: int) -> List[StepAnalysisItem]:
+        """获取用户各步骤表现分析。"""
+        step_scores_list = await self.training_repo.get_completed_step_scores_by_user_id(
+            user_id,
+            sorted(self.COMPLETED_STATUSES),
+        )
+        return self._build_step_analysis_from_step_scores(step_scores_list)
+
+    async def get_statistics_overview(self, user_id: int, days: int = 7) -> Dict[str, Any]:
+        """统计页首屏聚合：数据库先做概览/趋势聚合，仅对步骤分析拉取 step_scores。"""
+        completed_statuses = sorted(self.COMPLETED_STATUSES)
+        start_date = datetime.utcnow().date() - timedelta(days=days - 1)
+        personal_summary = await self.training_repo.get_personal_statistics_summary(user_id, completed_statuses)
+        trend_summary = await self.training_repo.get_training_trend_summary(user_id, start_date, completed_statuses)
+        step_scores_list = await self.training_repo.get_completed_step_scores_by_user_id(user_id, completed_statuses)
+
+        return {
+            "personal_stats": self._build_personal_statistics_from_summary(user_id, personal_summary),
+            "recent_trend": self._build_training_trend_from_summary(trend_summary, days),
+            "step_analysis": self._build_step_analysis_from_step_scores(step_scores_list),
+        }
 
     async def refresh_statistics(self, user_id: int) -> PersonalStatisticsResponse:
         """刷新并返回最新个人统计。"""
