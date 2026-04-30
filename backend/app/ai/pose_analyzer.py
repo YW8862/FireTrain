@@ -36,7 +36,7 @@ class PoseAnalyzer:
         "arm_raise": (150, 180),      # 手臂上举角度范围（度）
         "elbow_flex": (90, 120),       # 肘关节弯曲角度
         "shoulder_stable": (0, 30),    # 肩部稳定性角度
-        "body_upright": (80, 100),     # 身体直立角度
+        "body_upright": (0, 20),       # 身体直立角度（与垂直线夹角，越小越直立）
         "aim_direction": (0, 45),      # 瞄准方向角度
     }
     

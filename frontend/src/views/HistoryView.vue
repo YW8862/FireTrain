@@ -39,11 +39,6 @@
                 <el-button @click="handleReset">重置</el-button>
               </el-form-item>
             </el-form>
-
-            <div class="active-filter">
-              <span class="active-filter-label">当前筛选</span>
-              <el-tag effect="plain" size="large">{{ currentStatusLabel }}</el-tag>
-            </div>
           </div>
 
         <!-- 历史记录列表 -->
@@ -128,7 +123,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTrainingHistory } from '@/api/training'
@@ -159,10 +154,6 @@ const pagination = reactive({
 
 // 历史记录列表
 const historyList = ref([])
-const currentStatusLabel = computed(() => {
-  const matched = statusOptions.find((option) => option.value === queryForm.status)
-  return matched?.label || '全部状态'
-})
 
 // 获取训练类型名称
 const getTrainingTypeName = (type) => getTrainingTypeLabel(type)
@@ -288,22 +279,11 @@ onMounted(() => {
 }
 
 .search-form {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .status-select {
   width: 220px;
-}
-
-.active-filter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.active-filter-label {
-  color: var(--ft-color-text-tertiary);
-  font-size: 13px;
 }
 
 .table-panel {

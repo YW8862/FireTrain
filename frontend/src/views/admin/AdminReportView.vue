@@ -7,13 +7,25 @@
         <el-breadcrumb-item :to="{ path: '/admin/trainings' }">训练数据</el-breadcrumb-item>
         <el-breadcrumb-item>训练报告</el-breadcrumb-item>
       </el-breadcrumb>
-      <el-button plain @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        <span>返回</span>
-      </el-button>
+      <div class="topbar-actions">
+        <el-button
+          type="primary"
+          plain
+          :loading="exporting"
+          :disabled="loading"
+          @click="handleExportPdf"
+        >
+          <el-icon><Download /></el-icon>
+          <span>导出 PDF</span>
+        </el-button>
+        <el-button plain @click="$router.back()">
+          <el-icon><ArrowLeft /></el-icon>
+          <span>返回</span>
+        </el-button>
+      </div>
     </div>
 
-    <div v-loading="loading" class="report-body">
+    <div ref="reportContentRef" v-loading="loading" class="report-body">
       <!-- Hero 区：总分 + 基本信息 -->
       <section class="hero-card">
         <div class="hero-left">
@@ -233,6 +245,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
+  Download,
   User,
   Timer,
   DataAnalysis,
@@ -248,6 +261,7 @@ import {
 import { getTrainingDetail } from '@/api/training'
 import { getTrainingTypeLabel } from '@/utils/trainingType'
 import * as echarts from 'echarts'
+import { buildReportPdfFilename, exportElementToPdf } from '@/utils/reportExport'
 import {
   extractPerformanceLevel,
   extractStepScores,
@@ -261,7 +275,9 @@ import {
 const route = useRoute()
 
 const loading = ref(false)
+const exporting = ref(false)
 const radarChartRef = ref(null)
+const reportContentRef = ref(null)
 let radarChart = null
 let resizeHandler = null
 
@@ -424,6 +440,30 @@ const getScoreColor = (score) => {
   return '#ef4444'
 }
 
+const handleExportPdf = async () => {
+  if (!reportContentRef.value) return
+
+  exporting.value = true
+  try {
+    const filename = buildReportPdfFilename(
+      trainingInfo.value?.username || '用户',
+      getTrainingTypeLabel(trainingInfo.value?.training_type) || '训练报告',
+      trainingInfo.value?.id || route.params.id
+    )
+
+    await exportElementToPdf({
+      element: reportContentRef.value,
+      filename
+    })
+    ElMessage.success('PDF 已开始下载')
+  } catch (error) {
+    console.error('导出 PDF 失败:', error)
+    ElMessage.error(error.message || '导出 PDF 失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(() => {
   loadReportData()
   resizeHandler = () => radarChart?.resize()
@@ -452,6 +492,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .report-breadcrumb :deep(.el-breadcrumb__inner) {
   color: #475569;
@@ -911,6 +957,15 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .admin-report-page {
     padding: 16px;
+  }
+  .report-topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .topbar-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
   .hero-facts {
     grid-template-columns: 1fr;

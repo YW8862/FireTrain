@@ -216,7 +216,7 @@ class TrainingInferenceService:
         else:
             body_mean = pose_summary.get("body", {}).get("mean")
             right_arm_mean = pose_summary.get("right_arm", {}).get("mean")
-            if body_mean is not None and not 75 <= body_mean <= 105:
+            if body_mean is not None and body_mean > 35:
                 suggestions.append("身体姿态波动较大，建议保持站姿稳定后再执行操作")
             if right_arm_mean is not None and not 80 <= right_arm_mean <= 170:
                 suggestions.append("手臂动作幅度异常，建议按标准姿态重新练习抬臂和瞄准")
@@ -276,7 +276,8 @@ class TrainingInferenceService:
         max_arm = max(arm_angles) if arm_angles else None
         min_arm = min(arm_angles) if arm_angles else None
         arm_asymmetry = abs(right_arm - left_arm) if right_arm is not None and left_arm is not None else 0.0
-        stable_body = body is not None and 75 <= body <= 105
+        # body 角度是肩髋连线与垂直线的夹角，0 度 = 完全直立
+        stable_body = body is not None and body <= 35
         arm_bent = any(65 <= angle <= 130 for angle in arm_angles)
         arm_extended = any(angle >= 145 for angle in arm_angles)
         nozzle_control_posture = bool(
@@ -337,10 +338,9 @@ class TrainingInferenceService:
             "detected_actions": detected_actions,
         }
 
-    # 状态机置信度阈值（下调以兼容教学视频等非理想录制场景）
     _STEP_CONFIDENCE_THRESHOLD = 0.36
-    # 允许前向跳跃最多几步（step3 → step5 是合理的 +2 跳跃，但不允许 step1 → step6）
-    _MAX_FORWARD_JUMP = 2
+    # 允许前向跳跃最多几步（放宽到 3 步以避免前期步骤全部低于阈值时卡住）
+    _MAX_FORWARD_JUMP = 3
 
     def _recognize_action_sequence(
         self,
@@ -474,18 +474,18 @@ class TrainingInferenceService:
         final_stage = 1.0 if video_ratio >= 0.55 else (0.6 if video_ratio >= 0.30 else 0.3)
 
         return {
-            # step1 准备阶段：主要看姿态+站稳，不再强制前 8 秒
-            1: min(1.0, 0.40 * pose_score + 0.30 * stable_body_score + 0.30 * early_stage),
-            # step2 提灭火器：灭火器出现 + 手臂弯曲
-            2: min(1.0, 0.40 * extinguisher_score + 0.25 * arm_bent_score + 0.15 * stable_body_score + 0.10 * both_arms_score + 0.10 * mid_stage),
+            # step1 准备阶段：姿态可见 + 视频早期 + 身体稳定（低权重）
+            1: min(1.0, 0.35 * pose_score + 0.15 * stable_body_score + 0.35 * early_stage + 0.15 * (1.0 - extinguisher_score)),
+            # step2 提灭火器：灭火器出现 + 手臂弯曲 + 偏早期
+            2: min(1.0, 0.30 * extinguisher_score + 0.25 * arm_bent_score + 0.10 * stable_body_score + 0.10 * both_arms_score + 0.15 * early_stage + 0.10 * mid_stage),
             # step3 拔保险销：双臂非对称 + 灭火器出现
-            3: min(1.0, 0.30 * extinguisher_score + 0.25 * asymmetry_score + 0.15 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * mid_stage),
-            # step4 握喷管：双臂可见 + 握持姿态
-            4: min(1.0, 0.30 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
+            3: min(1.0, 0.25 * extinguisher_score + 0.30 * asymmetry_score + 0.15 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * mid_stage),
+            # step4 握喷管：双臂可见 + 握持姿态（需要 nozzle_control 信号更强）
+            4: min(1.0, 0.25 * extinguisher_score + 0.15 * both_arms_score + 0.25 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
             # step5 瞄准火源：手臂伸展 + 瞄准姿态
-            5: min(1.0, 0.30 * extinguisher_score + 0.25 * aiming_score + 0.15 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
+            5: min(1.0, 0.25 * extinguisher_score + 0.30 * aiming_score + 0.15 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
             # step6 压把手：手臂运动 + 后期阶段
-            6: min(1.0, 0.25 * extinguisher_score + 0.20 * aiming_score + 0.15 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score + 0.10 * final_stage),
+            6: min(1.0, 0.20 * extinguisher_score + 0.20 * aiming_score + 0.15 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score + 0.15 * final_stage),
         }
 
     def _recent_extinguisher_ratio(self, recent_features: List[Dict[str, Any]]) -> float:

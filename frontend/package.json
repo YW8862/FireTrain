@@ -17,8 +17,8 @@
     "test": "vitest run --coverage"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.0.18",
     "@vitejs/plugin-vue": "^6.0.4",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.3",
     "eslint-plugin-vue": "^10.8.0",
     "globals": "^17.4.0",
@@ -31,6 +31,8 @@
     "axios": "^1.13.6",
     "echarts": "^6.0.0",
     "element-plus": "^2.13.5",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.30",
     "vue-router": "^5.0.3"
