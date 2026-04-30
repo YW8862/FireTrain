@@ -285,8 +285,8 @@ class TrainingInferenceService:
             and len(arm_angles) >= 2
             and max_arm is not None
             and min_arm is not None
-            and max_arm >= 110
-            and 60 <= min_arm <= 130
+            and max_arm >= 90
+            and 50 <= min_arm <= 140
         )
         aiming_posture = bool(
             extinguisher_detections
@@ -478,10 +478,10 @@ class TrainingInferenceService:
             1: min(1.0, 0.35 * pose_score + 0.15 * stable_body_score + 0.35 * early_stage + 0.15 * (1.0 - extinguisher_score)),
             # step2 提灭火器：灭火器出现 + 手臂弯曲 + 偏早期
             2: min(1.0, 0.30 * extinguisher_score + 0.25 * arm_bent_score + 0.10 * stable_body_score + 0.10 * both_arms_score + 0.15 * early_stage + 0.10 * mid_stage),
-            # step3 拔保险销：双臂非对称 + 灭火器出现
-            3: min(1.0, 0.25 * extinguisher_score + 0.30 * asymmetry_score + 0.15 * arm_bent_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * mid_stage),
-            # step4 握喷管：双臂可见 + 握持姿态（需要 nozzle_control 信号更强）
-            4: min(1.0, 0.25 * extinguisher_score + 0.15 * both_arms_score + 0.25 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
+            # step3 拔保险销：双臂非对称 + 灭火器出现（移除 arm_bent_score，因为拔销时拉销手臂通常是伸展的）
+            3: min(1.0, 0.25 * extinguisher_score + 0.35 * asymmetry_score + 0.15 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
+            # step4 握喷管：双臂可见 + 握持姿态（降低 nozzle_control 条件，放宽手臂角度要求）
+            4: min(1.0, 0.25 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
             # step5 瞄准火源：手臂伸展 + 瞄准姿态
             5: min(1.0, 0.25 * extinguisher_score + 0.30 * aiming_score + 0.15 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
             # step6 压把手：手臂运动 + 后期阶段
