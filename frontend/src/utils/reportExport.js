@@ -21,7 +21,8 @@ export const exportElementToPdf = async ({
   element,
   filename,
   margin = 10,
-  a4ContentWidthPx = 1040
+  a4ContentWidthPx = null,
+  beforeCapture = null
 }) => {
   if (!element) {
     throw new Error('未找到可导出的报告内容')
@@ -32,11 +33,19 @@ export const exportElementToPdf = async ({
     import('jspdf')
   ])
 
+  const contentWidth = a4ContentWidthPx || element.offsetWidth || 1040
+
+  // beforeCapture 回调：在截图前完成动态内容的准备
+  if (typeof beforeCapture === 'function') {
+    await beforeCapture()
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+
   const exportRoot = document.createElement('div')
   exportRoot.style.position = 'fixed'
   exportRoot.style.left = '-10000px'
   exportRoot.style.top = '0'
-  exportRoot.style.width = `${a4ContentWidthPx}px`
+  exportRoot.style.width = `${contentWidth}px`
   exportRoot.style.padding = '0'
   exportRoot.style.margin = '0'
   exportRoot.style.background = '#ffffff'
@@ -44,6 +53,14 @@ export const exportElementToPdf = async ({
   exportRoot.style.pointerEvents = 'none'
 
   const clonedElement = element.cloneNode(true)
+
+  // 移除 step-list 的 max-height/overflow 限制，确保所有步骤评分都可见
+  const stepList = clonedElement.querySelector('.step-list')
+  if (stepList) {
+    stepList.style.maxHeight = 'none'
+    stepList.style.overflowY = 'visible'
+  }
+
   clonedElement.style.width = '100%'
   clonedElement.style.maxWidth = '100%'
   clonedElement.style.margin = '0'
@@ -59,7 +76,7 @@ export const exportElementToPdf = async ({
       backgroundColor: '#ffffff',
       scrollX: 0,
       scrollY: 0,
-      windowWidth: a4ContentWidthPx,
+      windowWidth: contentWidth,
       width: exportRoot.scrollWidth,
       height: exportRoot.scrollHeight
     })

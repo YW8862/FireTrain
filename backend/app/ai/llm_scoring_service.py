@@ -40,11 +40,12 @@ def _build_scoring_system_prompt() -> str:
 - 姿态规范性：{DIMENSION_WEIGHTS['pose_standardization']}
 - 操作时效性：{DIMENSION_WEIGHTS['timeliness']}
 
-评分原则：
-- 即使状态机仅识别出 0-2 个步骤，只要存在充分的灭火器/姿态证据，应给出 40-70 分区间的推断分数
-- 完全没有任何证据时才给 0 分
-- 有完整步骤链但动作略有瑕疵应给 70-85 分
-- 步骤完整且动作规范给 85-100 分
+评分原则（宽松模式）：
+- 只要有灭火器或姿态证据，即使状态机未识别出完整步骤，也应给出 50-80 分
+- 只要视频中有操作动作（灭火器出现），每个步骤至少给 60-70 分
+- 有完整步骤链且动作基本正确应给 80-90 分
+- 步骤完整且动作非常规范给 90-100 分
+- 重点考察：是否完成动作，而非动作是否完美
 
 请输出严格 JSON，不要输出 JSON 以外的内容：
 {{
@@ -163,9 +164,17 @@ class LLMScoringService:
                     "step_scores": baseline_score.get("step_scores"),
                 },
                 ensure_ascii=False,
+                indent=2,
             )
             if baseline_score
             else "未提供规则基线分"
+        )
+
+        baseline_reminder = (
+            "【重要】规则引擎基线分仅供参考，本规则引擎对姿态波动较敏感（稳定性 70° 以上会大幅扣分）。"
+            "请基于视频证据进行独立评分，不要被基线分锚定——如果你认为实际动作更规范，请给出更合理的分数。"
+            if baseline_score
+            else ""
         )
 
         evidence_hint_block = (
@@ -196,6 +205,8 @@ class LLMScoringService:
 
 【规则引擎基线分】
 {baseline_text}
+
+{baseline_reminder}
 
 {evidence_hint_block}请基于证据输出最终 JSON 评分结果。"""
 

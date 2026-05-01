@@ -180,17 +180,42 @@ class TrainingInferenceService:
         }
 
     async def generate_ai_scores(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
-        """基于统一摘要生成规则评分。"""
+        """基于LLM生成评分（优先），规则引擎作为基线备选。
+
+        如果配置了LLM_API_KEY则使用LLM评分，否则使用规则引擎评分。
+        """
         from app.ai.rule_engine import RuleEngine
+        from app.ai.llm_scoring_service import LLMScoringService
 
         summary = analysis_result.get("analysis_summary", analysis_result)
+
+        # 先用规则引擎计算基线分
         rule_engine = RuleEngine()
-        evaluation_result = await rule_engine.evaluate(summary)
-        evaluation_result["suggestions"] = self.generate_real_suggestions(
+        baseline_result = await rule_engine.evaluate(summary)
+
+        # 尝试使用LLM评分
+        llm_service = LLMScoringService.from_settings()
+        if llm_service is not None:
+            try:
+                llm_result = await llm_service.score_training(analysis_result, baseline_result)
+                llm_result["suggestions"] = self.generate_real_suggestions(
+                    summary,
+                    llm_result.get("step_scores", {}),
+                )
+                # LLM评分结果包含rule_engine的基线分作为参考
+                llm_result["rule_baseline"] = baseline_result
+                return llm_result
+            except Exception as e:
+                # LLM评分失败时打印警告但继续使用规则引擎
+                import logging
+                logging.warning(f"LLM评分失败，使用规则引擎作为备选: {e}")
+
+        # 规则引擎作为备选
+        baseline_result["suggestions"] = self.generate_real_suggestions(
             summary,
-            evaluation_result.get("step_scores", {}),
+            baseline_result.get("step_scores", {}),
         )
-        return evaluation_result
+        return baseline_result
 
     @staticmethod
     def generate_real_suggestions(
@@ -338,7 +363,7 @@ class TrainingInferenceService:
             "detected_actions": detected_actions,
         }
 
-    _STEP_CONFIDENCE_THRESHOLD = 0.36
+    _STEP_CONFIDENCE_THRESHOLD = 0.25
     # 允许前向跳跃最多几步（放宽到 3 步以避免前期步骤全部低于阈值时卡住）
     _MAX_FORWARD_JUMP = 3
 
@@ -453,7 +478,14 @@ class TrainingInferenceService:
         stable_body_score = 1.0 if features["stable_body"] else 0.0
         arm_bent_score = 1.0 if features["arm_bent"] else 0.0
         arm_extended_score = 1.0 if features["arm_extended"] else 0.0
-        asymmetry_score = min(features["arm_asymmetry"] / 80.0, 1.0)
+        # 非对称分数：合理范围20-100度给高分，过大过小都降低
+        raw_asymmetry = features["arm_asymmetry"]
+        if 20 <= raw_asymmetry <= 100:
+            asymmetry_score = raw_asymmetry / 80.0
+        elif raw_asymmetry < 20:
+            asymmetry_score = raw_asymmetry / 20.0 * 0.3
+        else:
+            asymmetry_score = max(0.0, 1.0 - (raw_asymmetry - 100) / 80.0)
         both_arms_score = 1.0 if features["both_arms_visible"] else 0.0
         nozzle_control_score = 1.0 if features["nozzle_control_posture"] else 0.0
         aiming_score = 1.0 if features["aiming_posture"] else 0.0
@@ -473,20 +505,21 @@ class TrainingInferenceService:
         late_stage = 1.0 if video_ratio >= 0.40 else 0.5
         final_stage = 1.0 if video_ratio >= 0.55 else (0.6 if video_ratio >= 0.30 else 0.3)
 
-        return {
-            # step1 准备阶段：姿态可见 + 视频早期 + 身体稳定（低权重）
-            1: min(1.0, 0.35 * pose_score + 0.15 * stable_body_score + 0.35 * early_stage + 0.15 * (1.0 - extinguisher_score)),
-            # step2 提灭火器：灭火器出现 + 手臂弯曲 + 偏早期
-            2: min(1.0, 0.30 * extinguisher_score + 0.25 * arm_bent_score + 0.10 * stable_body_score + 0.10 * both_arms_score + 0.15 * early_stage + 0.10 * mid_stage),
-            # step3 拔保险销：双臂非对称 + 灭火器出现（移除 arm_bent_score，因为拔销时拉销手臂通常是伸展的）
-            3: min(1.0, 0.25 * extinguisher_score + 0.35 * asymmetry_score + 0.15 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
-            # step4 握喷管：双臂可见 + 握持姿态（降低 nozzle_control 条件，放宽手臂角度要求）
-            4: min(1.0, 0.25 * extinguisher_score + 0.20 * both_arms_score + 0.20 * nozzle_control_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.15 * mid_stage),
-            # step5 瞄准火源：手臂伸展 + 瞄准姿态
-            5: min(1.0, 0.25 * extinguisher_score + 0.30 * aiming_score + 0.15 * arm_extended_score + 0.10 * stable_body_score + 0.10 * continuity_score + 0.10 * late_stage),
-            # step6 压把手：手臂运动 + 后期阶段
-            6: min(1.0, 0.20 * extinguisher_score + 0.20 * aiming_score + 0.15 * arm_extended_score + 0.20 * motion_score + 0.10 * continuity_score + 0.15 * final_stage),
-        }
+        # 基于时序约束的步骤评分
+        # step1: 0-25%
+        score1 = min(1.0, 0.35 * pose_score + 0.20 * stable_body_score + 0.45 * early_stage) if video_ratio <= 0.25 else 0.0
+        # step2: 10-45%
+        score2 = min(1.0, 0.35 * extinguisher_score + 0.35 * arm_bent_score + 0.15 * early_stage + 0.15 * mid_stage) if 0.08 <= video_ratio <= 0.35 else 0.0
+        # step3: 15-50%
+        score3 = min(1.0, 0.45 * extinguisher_score + 0.40 * asymmetry_score + 0.15 * mid_stage) if 0.20 <= video_ratio <= 0.50 else 0.0
+        # step4: 20-55%
+        score4 = min(1.0, 0.30 * extinguisher_score + 0.25 * nozzle_control_score + 0.25 * both_arms_score + 0.20 * mid_stage) if 0.40 <= video_ratio <= 0.65 else 0.0
+        # step5: 35-75%
+        score5 = min(1.0, 0.35 * aiming_score + 0.30 * arm_extended_score + 0.20 * extinguisher_score + 0.15 * late_stage) if 0.30 <= video_ratio <= 0.75 else 0.0
+        # step6: 55%+
+        score6 = min(1.0, 0.30 * extinguisher_score + 0.25 * aiming_score + 0.20 * arm_extended_score + 0.25 * (1.0 if video_ratio >= 0.70 else 0.0)) if video_ratio >= 0.55 else 0.0
+
+        return {1: score1, 2: score2, 3: score3, 4: score4, 5: score5, 6: score6}
 
     def _recent_extinguisher_ratio(self, recent_features: List[Dict[str, Any]]) -> float:
         if not recent_features:
@@ -548,13 +581,9 @@ class TrainingInferenceService:
     def _is_step_segment_valid(self, segment: Dict[str, Any]) -> bool:
         """判断步骤片段是否视为有效。
 
-        允许较短的"掠过式"片段被计入——教学视频中每个动作往往只停留 1-2 秒，
-        再苛刻的时长要求会让整个状态机对教学视频几乎完全失效。
+        简化判断：只要求帧数>=2，不对时长做严格要求。
         """
-        # 原先是 duration_range 下限 * 0.3（约 1-3 秒），这里再放宽到 * 0.15
-        min_seconds = max(0.5, STEP_BY_KEY[segment["step_key"]]["duration_range"][0] * 0.15)
-        duration = segment["end_timestamp"] - segment["start_timestamp"]
-        return segment["frame_count"] >= 2 and duration >= min_seconds
+        return segment["frame_count"] >= 2
 
     def _finalize_step_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
         pose_quality_values = segment.pop("pose_quality_values")

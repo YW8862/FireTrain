@@ -37,7 +37,7 @@
         <el-table-column prop="admin_id" label="管理员ID" width="100" />
         <el-table-column label="操作类型" width="180">
           <template #default="{ row }">
-            <el-tag size="small">{{ getActionLabel(row.action) }}</el-tag>
+            <el-tag size="small">{{ row.action }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="目标类型" width="120">

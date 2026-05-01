@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin_log import AdminLog
 from app.repositories.user_repository import UserRepository
+from app.utils.logger import ACTION_LABELS
 
 
 class AdminLogService:
@@ -149,7 +150,8 @@ class AdminLogService:
                 "id": log.id,
                 "admin_id": log.admin_id,
                 "admin_username": admin_username,
-                "action": log.action,
+                "action": ACTION_LABELS.get(log.action, log.action),
+                "action_original": log.action,
                 "target_type": log.target_type,
                 "target_id": log.target_id,
                 "details": log.details,

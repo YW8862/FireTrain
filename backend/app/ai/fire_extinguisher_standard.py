@@ -8,9 +8,9 @@ from typing import Any, Dict, List
 TRAINING_TYPE_FIRE_EXTINGUISHER = "fire_extinguisher"
 
 DIMENSION_WEIGHTS: Dict[str, float] = {
-    "action_completeness": 0.4,
-    "pose_standardization": 0.4,
-    "timeliness": 0.2,
+    "action_completeness": 0.45,
+    "pose_standardization": 0.45,
+    "timeliness": 0.10,
 }
 
 STEP_DEFINITIONS: List[Dict[str, Any]] = [

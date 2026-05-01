@@ -1,4 +1,10 @@
-"""灭火器训练规则评分引擎。"""
+"""增强版灭火器训练评分引擎
+
+新增维度：
+1. 动作连贯性 - 衡量步骤切换是否自然
+2. 姿态稳定性 - 不仅是均值，还要看波动（方差）
+3. 安全规范 - 面向火源、手臂角度等
+"""
 
 from __future__ import annotations
 
@@ -12,8 +18,8 @@ from app.ai.fire_extinguisher_standard import (
 )
 
 
-class RuleEngine:
-    """基于统一摘要结构进行规则评分。"""
+class EnhancedRuleEngine:
+    """增强版评分引擎"""
 
     async def evaluate(
         self,
@@ -23,6 +29,8 @@ class RuleEngine:
         training_type = training_type or analysis_summary.get("training_type", "fire_extinguisher")
         step_feature_summary = analysis_summary.get("step_feature_summary", {})
         step_scores = self._build_step_scores(step_feature_summary, training_type)
+
+        # 原有维度
         completeness_score = self._calculate_action_completeness(step_scores)
         standardization_score = self._calculate_pose_standardization(
             step_feature_summary,
@@ -33,14 +41,29 @@ class RuleEngine:
             training_type,
         )
 
+        # 新增维度
+        continuity_score = self._calculate_action_continuity(step_feature_summary, analysis_summary)
+        safety_score = self._calculate_safety_compliance(analysis_summary)
+
+        # 新权重分配（降低时效性权重，新增连贯性和安全规范）
+        new_weights = {
+            "action_completeness": 0.40,
+            "pose_standardization": 0.30,
+            "action_continuity": 0.15,
+            "safety_compliance": 0.10,
+            "timeliness": 0.05,
+        }
+
         total_score = round(
-            completeness_score * DIMENSION_WEIGHTS["action_completeness"]
-            + standardization_score * DIMENSION_WEIGHTS["pose_standardization"]
-            + timeliness_score * DIMENSION_WEIGHTS["timeliness"],
+            completeness_score * new_weights["action_completeness"]
+            + standardization_score * new_weights["pose_standardization"]
+            + continuity_score * new_weights["action_continuity"]
+            + safety_score * new_weights["safety_compliance"]
+            + timeliness_score * new_weights["timeliness"],
             1,
         )
+
         performance = get_performance_level(total_score)
-        details = self._build_details(analysis_summary, step_scores, training_type)
 
         return {
             "total_score": total_score,
@@ -49,23 +72,32 @@ class RuleEngine:
             "dimension_scores": {
                 "action_completeness": {
                     "score": round(completeness_score, 1),
-                    "weight": DIMENSION_WEIGHTS["action_completeness"],
+                    "weight": new_weights["action_completeness"],
                     "comment": self._dimension_comment("动作完整性", completeness_score),
                 },
                 "pose_standardization": {
                     "score": round(standardization_score, 1),
-                    "weight": DIMENSION_WEIGHTS["pose_standardization"],
+                    "weight": new_weights["pose_standardization"],
                     "comment": self._dimension_comment("姿态规范性", standardization_score),
+                },
+                "action_continuity": {
+                    "score": round(continuity_score, 1),
+                    "weight": new_weights["action_continuity"],
+                    "comment": self._dimension_comment("动作连贯性", continuity_score),
+                },
+                "safety_compliance": {
+                    "score": round(safety_score, 1),
+                    "weight": new_weights["safety_compliance"],
+                    "comment": self._dimension_comment("安全规范", safety_score),
                 },
                 "timeliness": {
                     "score": round(timeliness_score, 1),
-                    "weight": DIMENSION_WEIGHTS["timeliness"],
+                    "weight": new_weights["timeliness"],
                     "comment": self._dimension_comment("操作时效性", timeliness_score),
                 },
             },
             "step_scores": step_scores,
             "feedback": self._build_feedback(total_score, performance["label"], step_scores, analysis_summary),
-            "details": details,
         }
 
     def _build_step_scores(
@@ -92,14 +124,15 @@ class RuleEngine:
                 feedback = "未稳定识别到该步骤"
             else:
                 score = (
-                    45
+                    40
                     + confidence_ratio * 25
                     + pose_ratio * 20
                     + extinguisher_ratio * 10
+                    + duration_ratio * 5
                 )
-                # 不再因为issues扣分，只要完成就给分
+                score -= min(len(issues) * 5, 15)
                 score = max(0.0, min(100.0, score))
-                feedback = issues[0] if issues else "动作完成"
+                feedback = issues[0] if issues else "动作基本达标"
 
             step_scores[step_key] = {
                 "step_name": step_definition["name"],
@@ -116,6 +149,7 @@ class RuleEngine:
         return step_scores
 
     def _calculate_action_completeness(self, step_scores: Dict[str, Dict[str, Any]]) -> float:
+        """动作完整性：加权平均"""
         weighted_sum = 0.0
         total_weight = 0.0
         for step_data in step_scores.values():
@@ -131,28 +165,34 @@ class RuleEngine:
         step_feature_summary: Dict[str, Dict[str, Any]],
         pose_stats_summary: Dict[str, Dict[str, Any]],
     ) -> float:
+        """姿态规范性：使用方差惩罚波动"""
         pose_scores = [
             float(summary.get("pose_quality_score", 0.0))
             for summary in step_feature_summary.values()
             if summary.get("completed")
         ]
         avg_pose_score = sum(pose_scores) / len(pose_scores) if pose_scores else 0.0
-        body_stability = 70.0
-        body_stats = pose_stats_summary.get("body")
-        if body_stats:
-            stability = float(body_stats.get("stability", 30.0))
-            # stability 0-30: 优秀(90-100), 30-60: 良好(60-90), 60-90: 一般(30-60), >90: 差(<30)
-            if stability <= 30:
-                body_stability = 100.0 - stability * 0.33
-            elif stability <= 60:
-                body_stability = 90.0 - (stability - 30) * 1.0
-            elif stability <= 90:
-                body_stability = 60.0 - (stability - 60) * 1.0
-            else:
-                body_stability = max(0.0, 30.0 - (stability - 90) * 0.5)
-        return round(avg_pose_score * 0.7 + body_stability * 0.3, 1)
+
+        # 计算姿态波动方差
+        body_stats = pose_stats_summary.get("body", {})
+        stability = float(body_stats.get("stability", 30.0))
+
+        # 方差越大，扣分越多
+        # stability 0-30: 优秀, 30-60: 良好, 60-90: 一般, >90: 差
+        if stability <= 30:
+            body_penalty = 0
+        elif stability <= 60:
+            body_penalty = (stability - 30) * 0.5
+        elif stability <= 90:
+            body_penalty = 15 + (stability - 60) * 1.0
+        else:
+            body_penalty = 45 + (stability - 90) * 1.5
+
+        body_score = max(0.0, 100.0 - body_penalty)
+        return round(avg_pose_score * 0.7 + body_score * 0.3, 1)
 
     def _calculate_timeliness(self, duration_seconds: float, training_type: str) -> float:
+        """操作时效性"""
         total_range = STANDARD_TIME_RANGES.get(training_type, {}).get("total", (60, 150))
         min_time, max_time = total_range
         if duration_seconds <= 0:
@@ -166,7 +206,90 @@ class RuleEngine:
         penalty = min(100.0, deviation * 0.8)
         return round(max(0.0, 100.0 - penalty), 1)
 
+    def _calculate_action_continuity(
+        self,
+        step_feature_summary: Dict[str, Dict[str, Any]],
+        analysis_summary: Dict[str, Any],
+    ) -> float:
+        """动作连贯性：检查步骤之间切换是否自然
+
+        评估标准：
+        1. 步骤时长比例是否合理（不能某个步骤过长或过短）
+        2. 步骤切换是否平滑（通过step_times分析）
+        3. 是否有长时间的停顿或犹豫
+        """
+        step_times = analysis_summary.get("step_times", {})
+        if not step_times:
+            return 50.0  # 无法评估
+
+        total_duration = float(step_times.get("total", 1))
+        if total_duration <= 0:
+            return 50.0
+
+        # 检查各步骤时长占比
+        expected_ratios = {
+            "step1": 0.10,  # 准备阶段 3-15s / 60-150s ≈ 10%
+            "step2": 0.13,  # 提灭火器 5-15s / 60-150s ≈ 13%
+            "step3": 0.10,  # 拔保险销 3-10s / 60-150s ≈ 10%
+            "step4": 0.08,  # 握喷管 3-8s / 60-150s ≈ 8%
+            "step5": 0.13,  # 瞄准火源 5-15s / 60-150s ≈ 13%
+            "step6": 0.27,  # 压把手 10-30s / 60-150s ≈ 27%
+        }
+
+        continuity_penalties = []
+        for step_key, expected_ratio in expected_ratios.items():
+            actual_duration = float(step_times.get(step_key, 0))
+            if actual_duration <= 0:
+                continue
+
+            actual_ratio = actual_duration / total_duration
+            deviation = abs(actual_ratio - expected_ratio) / expected_ratio
+
+            # 偏离超过50%扣分
+            if deviation > 0.5:
+                continuity_penalties.append(min(deviation * 30, 30))
+
+        if not continuity_penalties:
+            return 100.0
+
+        avg_penalty = sum(continuity_penalties) / len(continuity_penalties)
+        return round(max(0.0, 100.0 - avg_penalty), 1)
+
+    def _calculate_safety_compliance(self, analysis_summary: Dict[str, Any]) -> float:
+        """安全规范：评估安全操作意识
+
+        评估标准：
+        1. body角度 - 应该面向火源（身体朝向稳定）
+        2. arm_extended - 灭火时手臂应该伸展
+        3. 是否有突然的大幅度动作（可能是不安全的）
+        """
+        pose_stats = analysis_summary.get("pose_stats_summary", {})
+
+        # 1. 身体稳定性（面向火源）
+        body_stats = pose_stats.get("body", {})
+        body_mean = float(body_stats.get("mean", 0))
+        # 身体角度均值应该接近0（面向前方）
+        body_score = max(0.0, 100.0 - body_mean * 2)
+
+        # 2. 手臂伸展情况
+        right_arm_stats = pose_stats.get("right_arm", {})
+        left_arm_stats = pose_stats.get("left_arm", {})
+        right_arm_mean = float(right_arm_stats.get("mean", 0))
+        left_arm_mean = float(left_arm_stats.get("mean", 0))
+
+        # 瞄准和压把手时，手臂应该较高角度伸展
+        arm_score = 50.0  # 默认
+        if right_arm_mean >= 120 or left_arm_mean >= 120:
+            arm_score = 80.0
+        if right_arm_mean >= 150 or left_arm_mean >= 150:
+            arm_score = 100.0
+
+        # 综合安全评分
+        safety_score = body_score * 0.5 + arm_score * 0.5
+        return round(safety_score, 1)
+
     def _step_duration_score(self, duration: float, duration_range: tuple[int, int]) -> float:
+        """步骤时长评分"""
         min_time, max_time = duration_range
         if duration <= 0:
             return 0.0
@@ -180,6 +303,7 @@ class RuleEngine:
         return max(0.0, 1.0 - deviation / (width * 2))
 
     def _dimension_comment(self, dimension_name: str, score: float) -> str:
+        """生成维度评价"""
         if score >= 90:
             return f"{dimension_name}表现优秀"
         if score >= 80:
@@ -195,6 +319,7 @@ class RuleEngine:
         step_scores: Dict[str, Dict[str, Any]],
         analysis_summary: Dict[str, Any],
     ) -> str:
+        """生成反馈建议"""
         completed_count = analysis_summary.get("completed_steps_count", 0)
         missing_steps = analysis_summary.get("missing_steps", [])
         weak_steps = [
@@ -215,20 +340,3 @@ class RuleEngine:
         else:
             parts.append("建议先按标准流程分步练习后再进行完整训练。")
         return "".join(parts)
-
-    def _build_details(
-        self,
-        analysis_summary: Dict[str, Any],
-        step_scores: Dict[str, Dict[str, Any]],
-        training_type: str,
-    ) -> Dict[str, Any]:
-        total_range = STANDARD_TIME_RANGES.get(training_type, {}).get("total", (60, 150))
-        return {
-            "completed_steps": analysis_summary.get("completed_steps", []),
-            "missing_steps": analysis_summary.get("missing_steps", []),
-            "pose_stats_summary": analysis_summary.get("pose_stats_summary", {}),
-            "detection_stats": analysis_summary.get("detection_stats", {}),
-            "step_times": analysis_summary.get("step_times", {}),
-            "standard_total_duration_range": list(total_range),
-            "step_score_breakdown": step_scores,
-        }

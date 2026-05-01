@@ -25,7 +25,7 @@
         <el-icon><WarningFilled /></el-icon>
         <div>
           <strong>训练中请注意</strong>
-          <div>请保持摄像头对准训练人员全身，避免遮挡关键动作，确保动作连续清晰。</div>
+          <div>{{ trainingTypeConfig.bannerMessage }}</div>
         </div>
       </div>
 
@@ -48,14 +48,9 @@
               show-icon
               class="mb-4"
             >
-              <p>请按照标准流程完成灭火器操作训练：</p>
+              <p>请按照标准流程完成{{ selectedTrainingTypeLabel }}：</p>
               <ol>
-                <li>准备阶段：做好个人防护，确认逃生路线</li>
-                <li>提起灭火器：用腿部力量提起灭火器</li>
-                <li>拔保险销：握住拉环用力拔出</li>
-                <li>握喷管：双手稳固握持喷管</li>
-                <li>瞄准火源：对准火焰根部，保持 2-3 米距离</li>
-                <li>压把手：均匀用力下压，左右扫射</li>
+                <li v-for="(step, index) in trainingTypeConfig.instructions" :key="index">{{ step }}</li>
               </ol>
             </el-alert>
 
@@ -83,7 +78,7 @@
                 </div>
                 <div class="prep-info-item">
                   <span class="prep-info-label">步骤数量</span>
-                  <strong>6 个标准步骤</strong>
+                  <strong>{{ trainingTypeConfig.stepCount }} 个标准步骤</strong>
                 </div>
                 <div class="prep-info-item">
                   <span class="prep-info-label">系统设置</span>
@@ -277,7 +272,7 @@ import { startTraining, completeTraining, preCheckTraining, uploadVideoFile, del
 import NavBar from '@/components/NavBar.vue'
 import fireExtinguisherSymbol from '@/assets/illustrations/fire-extinguisher-symbol.svg'
 import flameSymbol from '@/assets/illustrations/flame-symbol.svg'
-import { TRAINING_TYPE_OPTIONS, getTrainingTypeLabel } from '@/utils/trainingType'
+import { TRAINING_TYPE_OPTIONS, getTrainingTypeLabel, getTrainingTypeConfig } from '@/utils/trainingType'
 
 const router = useRouter()
 
@@ -323,16 +318,13 @@ const trainingTypeOptions = TRAINING_TYPE_OPTIONS
 const selectedTrainingTypeLabel = computed(() =>
   getTrainingTypeLabel(currentTraining.value?.training_type || trainingForm.training_type)
 )
+const trainingTypeConfig = computed(() => getTrainingTypeConfig(trainingForm.training_type))
 
-// 步骤状态
-const steps = reactive([
-  { name: '准备阶段', status: 'pending' },
-  { name: '提灭火器', status: 'pending' },
-  { name: '拔保险销', status: 'pending' },
-  { name: '握喷管', status: 'pending' },
-  { name: '瞄准火源', status: 'pending' },
-  { name: '压把手', status: 'pending' }
-])
+// 步骤状态 - 根据选择的训练类型动态生成
+const steps = computed(() => {
+  const config = getTrainingTypeConfig(trainingForm.training_type)
+  return config.steps.map(s => ({ name: s.name, status: 'pending' }))
+})
 
 const formatUploadSpeed = (bytesPerSecond) => {
   if (!bytesPerSecond || bytesPerSecond <= 0) return ''
@@ -472,7 +464,7 @@ const handleStartTraining = async () => {
   // 显示确认对话框
   try {
     await ElMessageBox.confirm(
-      '准备好开始训练了吗？\n\n请确保：\n• 已做好个人防护\n• 确认逃生路线畅通\n• 灭火器在有效期内',
+      trainingTypeConfig.value.confirmMessage,
       '开始训练',
       {
         confirmButtonText: '开始',
@@ -518,7 +510,7 @@ const handleCompleteTraining = async () => {
       '系统将进行以下检查：\n' +
       '1. 验证视频已上传\n' +
       '2. 分析训练动作\n' +
-      '3. 检测 6 个标准步骤\n\n' +
+      `3. 检测 ${trainingTypeConfig.value.stepCount} 个标准步骤\n\n` +
       '⚠️ 如果预检测判定无有效动作，继续提交通常会得到 0 分。',
       '提示',
       {

@@ -453,7 +453,30 @@ const handleExportPdf = async () => {
 
     await exportElementToPdf({
       element: reportContentRef.value,
-      filename
+      filename,
+      beforeCapture: async () => {
+        if (radarChart) {
+          radarChart.resize()
+          await new Promise(resolve => setTimeout(resolve, 300))
+          if (typeof radarChart.getDataURL === 'function') {
+            const dataURL = radarChart.getDataURL()
+            if (dataURL) {
+              const img = document.createElement('img')
+              img.src = dataURL
+              img.style.position = 'absolute'
+              img.style.top = '0'
+              img.style.left = '0'
+              img.style.width = '100%'
+              img.style.height = '100%'
+              const radarDiv = radarChartRef.value
+              if (radarDiv) {
+                radarDiv.style.position = 'relative'
+                radarDiv.appendChild(img)
+              }
+            }
+          }
+        }
+      }
     })
     ElMessage.success('PDF 已开始下载')
   } catch (error) {
