@@ -18,9 +18,9 @@ export const useUserStore = defineStore('user', () => {
     return viewRole.value || userInfo.value?.role
   })
   
-  // 是否可以切换角色
+  // 是否可以切换角色（admin 角色可切换，root 不可切换）
   const canSwitchRole = computed(() => {
-    return userInfo.value?.can_switch_role === true
+    return effectiveRole.value === 'admin'
   })
   
   // 方法

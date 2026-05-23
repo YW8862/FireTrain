@@ -41,6 +41,7 @@ class StepAnalysisItem(BaseModel):
     step_name: str
     average_score: Decimal
     success_rate: Decimal  # 成功率 0-100
+    training_count: int = 0
     improvement_suggestion: Optional[str] = None
 
 

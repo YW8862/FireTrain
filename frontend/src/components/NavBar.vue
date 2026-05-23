@@ -14,7 +14,8 @@
         <router-link to="/history" class="nav-item" active-class="active">训练记录</router-link>
         <router-link to="/stats" class="nav-item" active-class="active">统计分析</router-link>
       </div>
-      <el-dropdown @command="handleCommand" class="user-dropdown">
+      <!-- 登录状态显示用户下拉菜单 -->
+      <el-dropdown v-if="isLoggedIn" @command="handleCommand" class="user-dropdown">
         <span class="user-info">
           <el-avatar :size="34" icon="UserFilled" class="user-avatar" />
           <span class="user-name">{{ userName }}</span>
@@ -40,6 +41,11 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+      <!-- 未登录显示登录/注册链接 -->
+      <div v-else class="auth-links">
+        <router-link to="/login" class="auth-link">登录</router-link>
+        <router-link to="/register" class="auth-link auth-link-primary">注册</router-link>
+      </div>
     </div>
   </div>
 </template>
@@ -78,6 +84,11 @@ defineProps({
 // 用户信息
 const userName = computed(() => {
   return userStore.user?.username || '用户'
+})
+
+// 是否已登录
+const isLoggedIn = computed(() => {
+  return !!userStore.token
 })
 
 // 是否为管理员或 Root（基于有效角色）
@@ -274,6 +285,40 @@ const handleLogout = () => {
 .user-avatar {
   background: rgba(30, 64, 175, 0.12);
   color: var(--ft-color-primary);
+}
+
+.auth-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-link {
+  text-decoration: none;
+  color: var(--ft-color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--ft-color-border);
+  background: #fff;
+  transition: all 0.2s ease;
+}
+
+.auth-link:hover {
+  background: var(--ft-color-surface-muted);
+  border-color: var(--ft-color-border-strong);
+}
+
+.auth-link-primary {
+  background: var(--ft-color-primary);
+  color: #fff;
+  border-color: var(--ft-color-primary);
+}
+
+.auth-link-primary:hover {
+  background: var(--ft-color-primary-dark, #1e40af);
+  border-color: var(--ft-color-primary-dark, #1e40af);
 }
 
 /* 响应式设计 */

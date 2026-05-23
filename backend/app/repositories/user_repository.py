@@ -157,8 +157,7 @@ class UserRepository:
                 "role": user.role,
                 "is_active": user.is_active,
                 "last_login_at": user.last_login_at,
-                "created_at": user.created_at,
-                "can_switch_role": user.can_switch_role
+                "created_at": user.created_at
             })
         
         return user_list, total

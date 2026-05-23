@@ -493,7 +493,7 @@ const formatDate = (dateString) => {
 
 const getStatusType = (status) => {
   const map = {
-    created: 'info',
+    pending: 'info',
     processing: 'warning',
     done: 'success',
     failed: 'danger'
@@ -503,7 +503,7 @@ const getStatusType = (status) => {
 
 const getStatusLabel = (status) => {
   const map = {
-    created: '未开始',
+    pending: '等待检测中',
     processing: '进行中',
     done: '已完成',
     failed: '失败'

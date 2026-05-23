@@ -46,7 +46,7 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="用户名" prop="username">
-              <el-input v-model="form.username" placeholder="请输入用户名" />
+              <el-input v-model="form.username" placeholder="请输入用户名" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -80,25 +80,7 @@
               </span>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="允许切换角色">
-              <el-switch v-model="form.can_switch_role" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="原始角色">
-              <el-select
-                v-model="form.original_role"
-                clearable
-                :disabled="!form.can_switch_role || form.role === 'root'"
-                placeholder="无"
-                style="width: 100%"
-              >
-                <el-option label="管理员" value="admin" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
+                    <el-col :span="12">
             <el-form-item label="最后登录">
               <span>{{ formatDate(form.last_login_at) }}</span>
             </el-form-item>
@@ -150,6 +132,56 @@
         </div>
       </div>
     </el-card>
+
+    <el-card shadow="hover" class="trainings-card" v-if="!isCreateMode">
+      <template #header>
+        <div class="card-header">
+          <span>训练记录</span>
+          <el-tag type="info">共 {{ trainings.total }} 条</el-tag>
+        </div>
+      </template>
+
+      <el-table :data="trainings.records" v-loading="recordsLoading" stripe>
+        <el-table-column prop="id" label="训练ID" width="100" />
+        <el-table-column prop="training_type" label="训练类型" width="150" />
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="total_score" label="总分" width="100" />
+        <el-table-column prop="duration_seconds" label="时长(秒)" width="110" />
+        <el-table-column prop="created_at" label="开始时间" width="180">
+          <template #default="{ row }">
+            {{ formatDate(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="completed_at" label="完成时间" width="180">
+          <template #default="{ row }">
+            {{ formatDate(row.completed_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="row.status !== 'done'"
+              @click="goToReport(row.id)"
+            >
+              查看报告
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-model:current-page="trainings.page"
+        v-model:page-size="trainings.page_size"
+        :total="trainings.total"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next, jumper"
+        class="pagination"
+        @current-change="loadTrainings"
+        @size-change="handlePageSizeChange"
+      />
+    </el-card>
   </div>
 </template>
 
@@ -159,6 +191,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAdminDetail,
+  getTrainings,
   resetAdminPassword,
   updateAdmin,
   updateAdminRole
@@ -172,10 +205,12 @@ const userStore = useUserStore()
 const formRef = ref(null)
 const saving = ref(false)
 const loadingDetail = ref(false)
+const recordsLoading = ref(false)
 const newRole = ref('')
 
 const adminId = computed(() => Number(route.params.id))
 const isSelf = computed(() => adminId.value === userStore.userInfo?.id)
+const isCreateMode = computed(() => false) // 管理员详情页没有创建模式
 
 const form = reactive({
   username: '',
@@ -184,10 +219,15 @@ const form = reactive({
   password: '',
   role: '',
   is_active: true,
-  can_switch_role: false,
-  original_role: null,
   last_login_at: null,
   created_at: null
+})
+
+const trainings = reactive({
+  total: 0,
+  page: 1,
+  page_size: 10,
+  records: []
 })
 
 const rules = {
@@ -208,8 +248,6 @@ const applyAdminInfo = (admin) => {
   form.password = ''
   form.role = admin.role || ''
   form.is_active = admin.is_active ?? true
-  form.can_switch_role = admin.can_switch_role ?? false
-  form.original_role = admin.original_role || null
   form.last_login_at = admin.last_login_at || null
   form.created_at = admin.created_at || null
   newRole.value = admin.role || ''
@@ -227,13 +265,31 @@ const loadDetail = async () => {
   }
 }
 
+const loadTrainings = async () => {
+  recordsLoading.value = true
+  try {
+    const response = await getTrainings({
+      user_id: adminId.value,
+      page: trainings.page,
+      page_size: trainings.page_size
+    })
+    trainings.total = response.total
+    trainings.page = response.page
+    trainings.page_size = response.page_size
+    trainings.records = response.trainings
+  } finally {
+    recordsLoading.value = false
+  }
+}
+
+const handlePageSizeChange = () => {
+  trainings.page = 1
+  loadTrainings()
+}
+
 const handleSave = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-
-  if (!form.can_switch_role) {
-    form.original_role = null
-  }
 
   saving.value = true
   try {
@@ -242,9 +298,7 @@ const handleSave = async () => {
       email: form.email,
       phone: form.phone || null,
       password: form.password || undefined,
-      is_active: form.is_active,
-      can_switch_role: form.can_switch_role,
-      original_role: form.original_role || null
+      is_active: form.is_active
     }
     const updated = await updateAdmin(adminId.value, payload)
     applyAdminInfo(updated)
@@ -342,6 +396,7 @@ const goBack = () => {
 
 onMounted(() => {
   loadDetail()
+  loadTrainings()
 })
 </script>
 

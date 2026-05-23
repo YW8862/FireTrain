@@ -106,7 +106,7 @@ const routes = [
         path: 'logs',
         name: 'AdminLogs',
         component: () => import('@/views/admin/OperationLogs.vue'),
-        meta: { title: '操作日志' }
+        meta: { title: '操作日志', requiresRole: ['root'] }
       },
       {
         path: 'admins',

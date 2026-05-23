@@ -22,10 +22,6 @@ class User(TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
-    
-    # 角色切换相关字段
-    can_switch_role: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
-    original_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     training_records: Mapped[list["TrainingRecord"]] = relationship(
         back_populates="user",

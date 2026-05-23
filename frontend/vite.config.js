@@ -16,43 +16,42 @@ export default defineConfig({
   },
   
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 5173,
-    strictPort: true,  // 强制使用指定端口，如果被占用则报错
-    https: {
-      key: fs.readFileSync('../certs/key.pem'),
-      cert: fs.readFileSync('../certs/cert.pem')
-    },
+    strictPort: true,
+    allowedHosts: [
+      'firetrain.cn',
+      'www.firetrain.cn'
+    ],
     proxy: {
       '/api': {
-        target: backendTarget,  // 统一由前端 HTTPS 入口代理到内部 HTTP 后端
+        target: backendTarget,
         changeOrigin: true,
         secure: false,
-        ws: true
+        ws: true,
+        xfwd: true
       },
       '/health': {
         target: backendTarget,
-        changeOrigin: true
+        changeOrigin: true,
+        xfwd: true
       },
       '/docs': {
         target: backendTarget,
-        changeOrigin: true
+        changeOrigin: true,
+        xfwd: true
       },
       '/redoc': {
         target: backendTarget,
-        changeOrigin: true
+        changeOrigin: true,
+        xfwd: true
       },
       '/openapi.json': {
         target: backendTarget,
-        changeOrigin: true
+        changeOrigin: true,
+        xfwd: true
       }
-    },
-    // 允许外部访问
-    allowedHosts: [
-      'localhost',
-      '127.0.0.1',
-      '117.72.44.96'
-    ]
+    }
   },
   
   build: {

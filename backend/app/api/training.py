@@ -400,6 +400,41 @@ async def complete_training(
 
 # ============ 查询接口 ============
 
+@router.get("/types")
+async def get_training_types():
+    """
+    获取所有训练类型配置（统一配置接口）
+
+    返回所有可用的训练类型，包括步骤定义、操作指引、提示文字等。
+    前端所有训练类型选择组件都应调用此接口获取配置。
+    """
+    from app.ai.fire_extinguisher_standard import (
+        TRAINING_TYPE_FIRE_EXTINGUISHER,
+        STEP_DEFINITIONS,
+    )
+
+    types = [
+        {
+            "value": TRAINING_TYPE_FIRE_EXTINGUISHER,
+            "label": "灭火器训练",
+            "steps": STEP_DEFINITIONS,
+            "instructions": [
+                "准备阶段：做好个人防护，确认逃生路线",
+                "提起灭火器：用腿部力量提起灭火器",
+                "拔保险销：握住拉环用力拔出",
+                "握喷管：双手稳固握持喷管",
+                "瞄准火源：对准火焰根部，保持 2-3 米距离",
+                "压把手：均匀用力下压，左右扫射"
+            ],
+            "bannerMessage": "请保持摄像头对准训练人员全身，避免遮挡关键动作，确保动作连续清晰。",
+            "confirmMessage": "准备好开始训练了吗？请确保已做好个人防护，确认逃生路线畅通，灭火器在有效期内。",
+            "stepCount": len(STEP_DEFINITIONS),
+        }
+    ]
+
+    return {"types": types}
+
+
 @router.get("/history", response_model=TrainingHistoryResponse)
 async def get_training_history(
     page: int = 1,
@@ -415,7 +450,7 @@ async def get_training_history(
     
     - **page**: 页码（默认 1）
     - **page_size**: 每页数量（默认 10，最大 50）
-    - **status**: 状态筛选（created/processing/done）
+    - **status**: 状态筛选（pending/processing/done/failed）
     - **start_date**: 开始日期（ISO 8601 格式）
     - **end_date**: 结束日期（ISO 8601 格式）
     """

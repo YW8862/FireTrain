@@ -8,10 +8,19 @@
         <el-form-item label="操作类型">
           <el-select v-model="filterForm.action" placeholder="全部" clearable style="width: 180px">
             <el-option label="删除用户" value="DELETE_USER" />
-            <el-option label="重置密码" value="RESET_USER_PASSWORD" />
-            <el-option label="删除训练" value="DELETE_TRAINING" />
+            <el-option label="更新用户" value="UPDATE_USER" />
+            <el-option label="创建用户" value="CREATE_USER" />
+            <el-option label="重置用户密码" value="RESET_USER_PASSWORD" />
+            <el-option label="删除训练记录" value="DELETE_TRAINING" />
             <el-option label="上传视频" value="UPLOAD_VIDEO" />
-            <el-option label="角色切换" value="SWITCH_TO_USER" />
+            <el-option label="删除视频" value="DELETE_VIDEO" />
+            <el-option label="创建管理员" value="CREATE_ADMIN" />
+            <el-option label="删除管理员" value="DELETE_ADMIN" />
+            <el-option label="更新管理员" value="UPDATE_ADMIN" />
+            <el-option label="更新角色" value="UPDATE_ROLE" />
+            <el-option label="重置管理员密码" value="RESET_ADMIN_PASSWORD" />
+            <el-option label="切换到用户" value="SWITCH_TO_USER" />
+            <el-option label="切换到管理员" value="SWITCH_TO_ADMIN" />
           </el-select>
         </el-form-item>
         
@@ -33,7 +42,7 @@
         stripe
         style="width: 100%"
       >
-        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="id" label="操作ID" width="80" />
         <el-table-column prop="admin_id" label="管理员ID" width="100" />
         <el-table-column label="操作类型" width="180">
           <template #default="{ row }">
@@ -129,23 +138,6 @@ const handleReset = () => {
   filterForm.action = ''
   pagination.page = 1
   fetchLogs()
-}
-
-// 获取操作类型标签
-const getActionLabel = (action) => {
-  const labelMap = {
-    'DELETE_USER': '删除用户',
-    'RESET_USER_PASSWORD': '重置密码',
-    'DELETE_TRAINING': '删除训练',
-    'UPDATE_TRAINING': '更新训练',
-    'UPLOAD_VIDEO': '上传视频',
-    'DELETE_VIDEO': '删除视频',
-    'CREATE_ADMIN': '创建管理员',
-    'DELETE_ADMIN': '删除管理员',
-    'SWITCH_TO_USER': '切换到用户',
-    'SWITCH_TO_ADMIN': '切换到管理员'
-  }
-  return labelMap[action] || action
 }
 
 // 格式化详情

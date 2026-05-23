@@ -38,12 +38,10 @@ class UserInfoResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     role: str
-    can_switch_role: bool = False
-    original_role: Optional[str] = None
     is_active: bool
     last_login_at: Optional[datetime] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -84,8 +82,7 @@ class RoleSwitchRequest(BaseModel):
 class RoleSwitchResponse(BaseModel):
     """角色切换响应"""
     role: str
-    original_role: str | None = None
-    can_switch_role: bool
+    old_role: str | None = None
     token: str | None = None  # 新的 Token
 
 
@@ -97,7 +94,6 @@ class AdminCreateRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     password: str = Field(..., min_length=6, max_length=50, description="密码")
     role: str = Field("admin", description="角色 (仅允许 admin，Root 账号唯一且不可新增)")
-    can_switch_role: bool = Field(True, description="是否允许角色切换")
 
 
 class AdminUpdateRoleRequest(BaseModel):
@@ -115,8 +111,6 @@ class AdminInfoResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     role: str
-    can_switch_role: bool
-    original_role: Optional[str] = None
     is_active: bool
     last_login_at: Optional[datetime] = None
     created_at: datetime
@@ -132,8 +126,6 @@ class AdminUserCreateRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=50, description="密码")
     phone: Optional[str] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
-    can_switch_role: bool = Field(False, description="是否允许切换角色")
-    original_role: Optional[str] = Field(None, description="原始角色")
 
 
 class AdminUserUpdateRequest(BaseModel):
@@ -142,9 +134,8 @@ class AdminUserUpdateRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     phone: Optional[str] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
-    can_switch_role: bool = Field(False, description="是否允许切换角色")
-    original_role: Optional[str] = Field(None, description="原始角色")
     password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
+    role: Optional[str] = Field(None, description="用户角色 (user/admin)")
 
 
 class AdminUserInfoResponse(BaseModel):
@@ -154,8 +145,6 @@ class AdminUserInfoResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     role: str
-    can_switch_role: bool = False
-    original_role: Optional[str] = None
     is_active: bool
     last_login_at: Optional[datetime] = None
     created_at: datetime
@@ -170,6 +159,4 @@ class AdminUpdateRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     phone: Optional[str] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
-    can_switch_role: bool = Field(True, description="是否允许角色切换")
-    original_role: Optional[str] = Field(None, description="原始角色")
     password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")

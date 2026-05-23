@@ -10,7 +10,17 @@
             <h1 class="page-title">训练统计分析</h1>
             <p class="page-subtitle">查看训练次数、平均得分、趋势变化和各步骤表现。</p>
           </div>
-          <el-button @click="loadData" :loading="loading">刷新数据</el-button>
+          <div class="card-header-actions">
+            <el-select v-model="selectedTrainingType" placeholder="全部训练项目" clearable size="small" @change="loadData">
+              <el-option
+                v-for="option in TRAINING_TYPE_OPTIONS"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+            <el-button @click="loadData" :loading="loading">刷新数据</el-button>
+          </div>
         </div>
       </template>
 
@@ -95,7 +105,7 @@
             <el-table-column prop="training_count" label="训练次数" width="120" align="center" />
             <el-table-column prop="success_rate" label="成功率" width="120" sortable align="center">
               <template #default="{ row }">
-                <span class="success-rate">{{ (row.success_rate * 100).toFixed(1) }}%</span>
+                <span class="success-rate">{{ Number(row.success_rate).toFixed(1) }}%</span>
               </template>
             </el-table-column>
             <el-table-column prop="suggestion" label="改进建议" min-width="280">
@@ -119,7 +129,11 @@ import {
   getTrainingTrend,
   getStepAnalysis
 } from '@/api/statistics'
+import { useTrainingTypes } from '@/composables/useTrainingTypes'
 import NavBar from '@/components/NavBar.vue'
+
+const { TRAINING_TYPE_OPTIONS } = useTrainingTypes()
+const selectedTrainingType = ref(null)
 
 let echarts = null
 let echartsLoader = null
@@ -242,7 +256,7 @@ const loadData = async () => {
   trendLoading.value = true
   stepLoading.value = true
   try {
-    const overview = await getStatisticsOverview(trendDays.value)
+    const overview = await getStatisticsOverview(trendDays.value, selectedTrainingType.value)
     await applyOverviewData(overview)
   } catch (error) {
     console.error('加载数据失败:', error)
@@ -287,7 +301,7 @@ const loadTrendData = async () => {
 const loadStepAnalysis = async () => {
   stepLoading.value = true
   try {
-    const res = await getStepAnalysis()
+    const res = await getStepAnalysis(selectedTrainingType.value)
     stepAnalysis.value = normalizeStepAnalysis(res.step_analysis || [])
     await Promise.all([
       renderStepBarChart(stepAnalysis.value),
@@ -647,6 +661,20 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   padding-bottom: 8px;
+}
+
+.card-header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.card-header-actions .el-select {
+  min-width: 160px;
+}
+
+.card-header-actions .el-select .el-input__wrapper {
+  font-size: 14px;
 }
 
 .page-title {

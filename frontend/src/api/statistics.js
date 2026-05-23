@@ -13,32 +13,50 @@ export function getPersonalStatistics() {
 /**
  * 获取训练趋势
  * @param {number} days - 查询天数
+ * @param {string} trainingType - 训练类型（可选）
  */
-export function getTrainingTrend(days = 7) {
+export function getTrainingTrend(days = 7, trainingType = null) {
+  const params = { days }
+  if (trainingType) {
+    params.training_type = trainingType
+  }
   return request({
-    url: `/stats/trend?days=${days}`,
-    method: 'get'
+    url: '/stats/trend',
+    method: 'get',
+    params
   })
 }
 
 /**
  * 获取步骤分析
+ * @param {string} trainingType - 训练类型（可选）
  */
-export function getStepAnalysis() {
+export function getStepAnalysis(trainingType = null) {
+  const params = {}
+  if (trainingType) {
+    params.training_type = trainingType
+  }
   return request({
     url: '/stats/step-analysis',
-    method: 'get'
+    method: 'get',
+    params
   })
 }
 
 /**
  * 获取统计概览
  * @param {number} days - 趋势天数
+ * @param {string} trainingType - 训练类型（可选）
  */
-export function getStatisticsOverview(days = 7) {
+export function getStatisticsOverview(days = 7, trainingType = null) {
+  const params = { days }
+  if (trainingType) {
+    params.training_type = trainingType
+  }
   return request({
-    url: `/stats/overview?days=${days}`,
-    method: 'get'
+    url: '/stats/overview',
+    method: 'get',
+    params
   })
 }
 

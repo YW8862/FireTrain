@@ -6,7 +6,7 @@
         <p class="page-subtitle">筛选训练记录、查看报告并执行删除等管理操作。</p>
       </div>
     </div>
-    
+
     <!-- 搜索和过滤 -->
     <el-card shadow="hover" class="filter-card">
       <el-form :inline="true" :model="filterForm">
@@ -18,21 +18,22 @@
             style="width: 120px"
           />
         </el-form-item>
-        
+
         <el-form-item label="训练类型">
           <el-select v-model="filterForm.training_type" placeholder="全部" clearable style="width: 150px">
             <el-option label="灭火器操作" value="fire_extinguisher" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="状态">
           <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
+            <el-option label="等待检测中" value="pending" />
+            <el-option label="检测中" value="processing" />
             <el-option label="已完成" value="done" />
-            <el-option label="进行中" value="in_progress" />
             <el-option label="失败" value="failed" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="日期范围">
           <el-date-picker
             v-model="filterForm.dateRange"
@@ -44,7 +45,7 @@
             style="width: 240px"
           />
         </el-form-item>
-        
+
         <el-form-item>
           <el-button type="primary" @click="handleSearch">
             <el-icon><Search /></el-icon>
@@ -54,7 +55,39 @@
         </el-form-item>
       </el-form>
     </el-card>
-    
+
+    <!-- 批量操作工具栏 -->
+    <el-card shadow="hover" class="batch-toolbar">
+      <div class="batch-toolbar-content">
+        <div class="selection-summary">
+          <el-icon class="selection-icon"><Select /></el-icon>
+          <span class="summary-text">
+            已选 <strong>{{ selectedTrainings.length }}</strong> 条训练记录
+          </span>
+          <el-divider direction="vertical" />
+          <el-button text type="primary" size="small" @click="clearSelection">
+            清空选择
+          </el-button>
+        </div>
+
+        <div class="batch-actions">
+          <el-popconfirm
+            title="确定要删除选中的训练记录吗？此操作不可恢复！"
+            confirm-button-text="确定"
+            cancel-button-text="取消"
+            @confirm="handleBatchDelete"
+          >
+            <template #reference>
+              <el-button type="danger" :disabled="selectedTrainings.length === 0">
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </template>
+          </el-popconfirm>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 训练记录表格 -->
     <el-card shadow="hover">
       <el-table
@@ -62,9 +95,11 @@
         v-loading="loading"
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" :selectable="checkSelectable" />
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="用户名" width="120" />
+        <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="training_type" label="训练类型" width="150" />
         <el-table-column label="分数" width="100">
           <template #default="{ row }">
@@ -80,38 +115,30 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="duration" label="时长(秒)" width="100" />
-        <el-table-column prop="created_at" label="开始时间" width="180">
+        <el-table-column prop="duration" label="训练时长(秒)" width="100" />
+        <el-table-column prop="created_at" label="开始时间" min-width="160">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column prop="completed_at" label="完成时间" width="180">
+        <el-table-column prop="completed_at" label="完成时间" min-width="160">
           <template #default="{ row }">
             {{ row.completed_at ? formatDate(row.completed_at) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="180">
+        <el-table-column label="操作" fixed="right" width="120">
           <template #default="{ row }">
             <el-button
-              v-if="row.status === 'done'"
-              type="primary"
+              type="success"
               size="small"
               @click="handleViewReport(row)"
             >
               查看报告
             </el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
           </template>
         </el-table-column>
       </el-table>
-      
+
       <!-- 分页 -->
       <el-pagination
         v-model:current-page="pagination.page"
@@ -132,11 +159,13 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getTrainings, deleteTraining } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Select, Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
 const trainingList = ref([])
 const loading = ref(false)
+const selectedTrainings = ref([])
 
 const filterForm = reactive({
   user_id: '',
@@ -163,15 +192,15 @@ const fetchTrainings = async () => {
       training_type: filterForm.training_type || undefined,
       status: filterForm.status || undefined
     }
-    
+
     // 添加日期范围
     if (filterForm.dateRange && filterForm.dateRange.length === 2) {
       params.start_date = filterForm.dateRange[0]
       params.end_date = filterForm.dateRange[1]
     }
-    
+
     const response = await getTrainings(params)
-    
+
     trainingList.value = response.trainings
     pagination.total = response.total
   } catch (error) {
@@ -215,32 +244,20 @@ const handlePageSizeChange = () => {
   fetchTrainings()
 }
 
-// 删除训练记录
-const handleDelete = async (training) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除该训练记录吗？此操作不可恢复！`,
-      '警告',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    
-    await deleteTraining(training.id)
-    ElMessage.success('训练记录删除成功')
-    fetchTrainings()
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + error.message)
-    }
-  }
+const handleSelectionChange = (selection) => {
+  selectedTrainings.value = selection
+}
+
+const clearSelection = () => {
+  selectedTrainings.value = []
+}
+
+const checkSelectable = (row) => {
+  return row.status === 'done'
 }
 
 // 查看报告
 const handleViewReport = (training) => {
-  // 管理员跳转到管理后台的报告页面
   router.push(`/admin/report/${training.id}`)
 }
 
@@ -257,7 +274,8 @@ const getStatusType = (status) => {
   const typeMap = {
     'done': 'success',
     'completed': 'success',
-    'in_progress': 'warning',
+    'pending': 'info',
+    'processing': 'warning',
     'failed': 'danger'
   }
   return typeMap[status] || 'info'
@@ -268,7 +286,8 @@ const getStatusLabel = (status) => {
   const labelMap = {
     'done': '已完成',
     'completed': '已完成',
-    'in_progress': '进行中',
+    'pending': '等待检测中',
+    'processing': '检测中',
     'failed': '失败'
   }
   return labelMap[status] || status
@@ -278,6 +297,26 @@ const getStatusLabel = (status) => {
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+// 批量删除
+const handleBatchDelete = async () => {
+  if (selectedTrainings.value.length === 0) return
+
+  loading.value = true
+  try {
+    const results = await Promise.allSettled(
+      selectedTrainings.value.map((t) => deleteTraining(t.id))
+    )
+    const successCount = results.filter((r) => r.status === 'fulfilled').length
+    ElMessage.success(`成功删除 ${successCount} 条训练记录`)
+    clearSelection()
+    fetchTrainings()
+  } catch (error) {
+    ElMessage.error('批量删除失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(() => {
@@ -308,5 +347,40 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 20px;
+}
+
+.batch-toolbar {
+  margin-bottom: 20px;
+  border: 1px solid var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9);
+}
+
+.batch-toolbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  gap: 20px;
+}
+
+.selection-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #606266;
+}
+
+.selection-icon {
+  font-size: 18px;
+  color: var(--el-color-primary);
+}
+
+.summary-text {
+  font-size: 14px;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 12px;
 }
 </style>

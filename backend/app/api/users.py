@@ -86,8 +86,6 @@ async def get_current_user(
         "email": user.email,
         "phone": user.phone,
         "role": user.role,
-        "can_switch_role": user.can_switch_role,
-        "original_role": user.original_role,
         "is_active": user.is_active,
         "last_login_at": user.last_login_at,
         "created_at": user.created_at,
@@ -166,8 +164,6 @@ async def login(
                 email=user.email,
                 phone=user.phone,
                 role=user.role,
-                can_switch_role=user.can_switch_role,
-                original_role=user.original_role,
                 is_active=user.is_active,
                 last_login_at=user.last_login_at,
                 created_at=user.created_at
@@ -196,8 +192,6 @@ async def get_profile(current_user: Annotated[dict, Depends(get_current_user)]):
         email=current_user["email"],
         phone=current_user.get("phone"),
         role=current_user.get("role", "student"),
-        can_switch_role=current_user.get("can_switch_role", False),
-        original_role=current_user.get("original_role"),
         is_active=current_user.get("is_active", True),
         last_login_at=current_user.get("last_login_at"),
         created_at=current_user.get("created_at", datetime.utcnow())
@@ -239,8 +233,6 @@ async def update_profile(
             email=updated_user.email,
             phone=updated_user.phone,
             role=updated_user.role,
-            can_switch_role=updated_user.can_switch_role,
-            original_role=updated_user.original_role,
             is_active=updated_user.is_active,
             last_login_at=updated_user.last_login_at,
             created_at=updated_user.created_at

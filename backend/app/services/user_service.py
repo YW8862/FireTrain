@@ -145,7 +145,7 @@ class UserService:
         
         # 检查用户是否激活
         if not user.is_active:
-            raise ValueError("账户已被禁用")
+            raise ValueError("账户状态不可用")
         
         # 更新最后登录时间
         user.last_login_at = datetime.utcnow()
@@ -197,57 +197,34 @@ class UserService:
     
     async def switch_role(self, user_id: int, target_role: str) -> dict:
         """
-        切换用户角色（临时）
-        
+        切换用户角色
+
         Args:
             user_id: 用户 ID
             target_role: 目标角色
-            
+
         Returns:
             包含角色信息的字典
-            
+
         Raises:
             ValueError: 如果切换不被允许
         """
         user = await self.user_repo.get_by_id(user_id)
         if not user:
             raise ValueError("用户不存在")
-        
-        # 验证是否允许切换
-        if not user.can_switch_role:
-            raise PermissionError("该用户没有权限切换角色")
-        
+
         normalized_target_role = (
             STANDARD_USER_ROLE if target_role == LEGACY_USER_ROLE else target_role
         )
 
-        # 仅允许在普通用户和 admin/root 之间切换
-        if normalized_target_role not in [STANDARD_USER_ROLE, "admin", "root"]:
+        if normalized_target_role not in [STANDARD_USER_ROLE, "admin"]:
             raise ValueError("不支持的角色切换")
-        
-        # 如果是切换到普通用户角色
-        if normalized_target_role == STANDARD_USER_ROLE:
-            # 从 admin/root 切换到普通用户时记录原始角色
-            if user.role in ["admin", "root"]:
-                user.original_role = user.role
-            user.role = STANDARD_USER_ROLE
-        else:
-            # 如果是切换回 admin 或 root
-            # 检查当前是否是普通用户角色且有原始角色
-            if user.role in [STANDARD_USER_ROLE, LEGACY_USER_ROLE] and user.original_role:
-                # 恢复原始角色
-                user.role = user.original_role
-                user.original_role = None
-            elif user.role in [STANDARD_USER_ROLE, LEGACY_USER_ROLE]:
-                raise PermissionError("普通用户无法直接切换到管理员角色")
-            else:
-                # 直接设置为目标角色
-                user.role = normalized_target_role
-        
+
+        old_role = user.role
+        user.role = normalized_target_role
         await self.user_repo.update(user, {})
-        
+
         return {
             "role": user.role,
-            "original_role": user.original_role,
-            "can_switch_role": user.can_switch_role
+            "old_role": old_role
         }

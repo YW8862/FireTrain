@@ -1,6 +1,6 @@
 <template>
   <div class="admin-management">
-    <h2 class="page-title">👮 管理员管理</h2>
+    <h2 class="page-title">权限管理</h2>
 
     <!-- 搜索和操作 -->
     <el-card shadow="hover" class="filter-card">
@@ -31,6 +31,33 @@
       </el-form>
     </el-card>
 
+    <!-- 批量操作工具栏 -->
+    <el-card shadow="hover" class="batch-toolbar">
+      <div class="batch-toolbar-content">
+        <div class="selection-summary">
+          <el-icon class="selection-icon"><Select /></el-icon>
+          <span class="summary-text">
+            已选 <strong>{{ selectionCount }}</strong> 个管理员
+          </span>
+          <el-divider direction="vertical" />
+          <el-button text type="primary" size="small" @click="clearSelection">
+            清空选择
+          </el-button>
+        </div>
+
+        <div class="batch-actions">
+          <el-button type="warning" @click="handleBatchResetPassword">
+            <el-icon><Key /></el-icon>
+            重置密码
+          </el-button>
+          <el-button @click="handleBatchDemote">
+            <el-icon><Bottom /></el-icon>
+            撤销管理员
+          </el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 管理员表格 -->
     <el-card shadow="hover">
       <el-table
@@ -38,78 +65,36 @@
         v-loading="loading"
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" :selectable="checkSelectable" />
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="用户名" width="150" />
-        <el-table-column prop="email" label="邮箱" width="220" />
-        <el-table-column label="角色" width="120">
+        <el-table-column prop="username" label="用户名" min-width="120" />
+        <el-table-column prop="email" label="邮箱" min-width="180" />
+        <el-table-column label="角色" width="100">
           <template #default="{ row }">
             <el-tag :type="getRoleType(row.role)" size="small">
               {{ getRoleLabel(row.role) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="可切换角色" width="120">
-          <template #default="{ row }">
-            <el-tag :type="row.can_switch_role ? 'success' : 'info'" size="small">
-              {{ row.can_switch_role ? '是' : '否' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small">
-              {{ row.is_active ? '正常' : '禁用' }}
+              {{ row.is_active ? '正常' : '冻结' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
+        <el-table-column prop="created_at" label="创建时间" min-width="160">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="360">
+        <el-table-column label="操作" fixed="right" width="120">
           <template #default="{ row }">
-            <el-button type="success" size="small" @click="showEditDialog(row)">
+            <el-button type="success" size="small" @click="goToDetail(row)">
               详情/编辑
             </el-button>
-            <el-button type="warning" size="small" @click="handleResetPassword(row)">
-              重置密码
-            </el-button>
-            <el-dropdown
-              v-if="row.role !== 'root'"
-              @command="(cmd) => handleRoleChange(row, cmd)"
-            >
-              <el-button type="primary" size="small">
-                修改角色 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    command="student"
-                    :disabled="['student', 'user'].includes(row.role)"
-                  >
-                    普通用户
-                  </el-dropdown-item>
-                  <el-dropdown-item command="admin" :disabled="row.role === 'admin'">
-                    管理员
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-
-            <el-popconfirm
-              title="确定要删除该管理员吗？此操作不可恢复！"
-              confirm-button-text="确定"
-              cancel-button-text="取消"
-              @confirm="handleDelete(row)"
-            >
-              <template #reference>
-                <el-button type="danger" size="small" style="margin-left: 8px">
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -128,117 +113,58 @@
       </div>
     </el-card>
 
-    <!-- 新增管理员对话框 -->
+    <!-- 新增管理员对话框 - 从普通用户中选择 -->
     <el-dialog
       v-model="createDialogVisible"
       title="新增管理员"
-      width="500px"
+      width="600px"
       @close="resetCreateForm"
     >
-      <el-form
-        ref="createFormRef"
-        :model="createForm"
-        :rules="createRules"
-        label-width="100px"
-      >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="createForm.username" placeholder="请输入用户名（3-20字符）" />
-        </el-form-item>
+      <div class="create-tip">请从下方普通用户列表中选择一个或多个用户，点击"确认添加"将其提升为管理员</div>
 
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="createForm.email" placeholder="请输入邮箱" />
-        </el-form-item>
-
-        <el-form-item label="密码" prop="password">
+      <el-form :inline="true" :model="createFilterForm" class="user-search-form">
+        <el-form-item label="搜索用户">
           <el-input
-            v-model="createForm.password"
-            type="password"
-            placeholder="请输入密码（至少6位）"
-            show-password
+            v-model="createFilterForm.keyword"
+            placeholder="输入用户名或邮箱搜索"
+            clearable
+            style="width: 200px"
+            @keydown.enter="searchNormalUsers"
           />
         </el-form-item>
-
-        <el-form-item label="角色">
-          <el-tag type="warning">管理员</el-tag>
-          <span class="form-hint">系统仅保留唯一 Root 账号，仅支持创建管理员</span>
-        </el-form-item>
-
-        <el-form-item label="可切换角色">
-          <el-switch v-model="createForm.can_switch_role" />
-          <span style="margin-left: 10px; color: #909399; font-size: 12px">
-            允许在管理员和用户身份间切换
-          </span>
+        <el-form-item>
+          <el-button type="primary" @click="searchNormalUsers">搜索</el-button>
         </el-form-item>
       </el-form>
+
+      <el-table
+        ref="userTableRef"
+        :data="normalUsers"
+        v-loading="usersLoading"
+        stripe
+        height="300"
+        @selection-change="handleUserSelectionChange"
+      >
+        <el-table-column type="selection" width="55" />
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="username" label="用户名" width="120" />
+        <el-table-column prop="email" label="邮箱" width="200" />
+        <el-table-column prop="phone" label="手机号" width="120" />
+      </el-table>
+
+      <div class="selected-count" v-if="selectedUsers.length > 0">
+        已选择 {{ selectedUsers.length }} 个用户
+      </div>
 
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">
-          创建
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="editDialogVisible"
-      title="管理员详情/编辑"
-      width="560px"
-      @close="resetEditForm"
-    >
-      <el-form
-        ref="editFormRef"
-        :model="editForm"
-        :rules="editRules"
-        label-width="110px"
-      >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="editForm.username" />
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="editForm.email" />
-        </el-form-item>
-        <el-form-item label="手机号">
-          <el-input v-model="editForm.phone" />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-tag :type="getRoleType(editForm.role)">{{ getRoleLabel(editForm.role) }}</el-tag>
-        </el-form-item>
-        <el-form-item label="启用状态">
-          <el-switch v-model="editForm.is_active" />
-        </el-form-item>
-        <el-form-item label="允许切换角色">
-          <el-switch v-model="editForm.can_switch_role" />
-        </el-form-item>
-        <el-form-item label="原始角色">
-          <el-select
-            v-model="editForm.original_role"
-            clearable
-            :disabled="!editForm.can_switch_role || editForm.role === 'root'"
-            style="width: 100%"
-          >
-            <el-option label="管理员" value="admin" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="新密码">
-          <el-input
-            v-model="editForm.password"
-            type="password"
-            placeholder="留空则不修改密码"
-            show-password
-          />
-        </el-form-item>
-        <el-form-item label="最后登录">
-          <span>{{ formatDate(editForm.last_login_at) }}</span>
-        </el-form-item>
-        <el-form-item label="创建时间">
-          <span>{{ formatDate(editForm.created_at) }}</span>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="updating" @click="handleUpdate">
-          保存
+        <el-button
+          type="primary"
+          :loading="creating"
+          :disabled="selectedUsers.length === 0"
+          @click="handleCreate"
+        >
+          确认添加 ({{ selectedUsers.length }})
         </el-button>
       </template>
     </el-dialog>
@@ -246,18 +172,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Search, Plus, ArrowDown } from '@element-plus/icons-vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Plus, Key, Bottom, Select } from '@element-plus/icons-vue'
 import {
-  createAdmin,
-  deleteAdmin,
-  getAdminDetail,
   getAdmins,
+  getUsers,
   resetAdminPassword,
-  updateAdmin,
   updateAdminRole
 } from '@/api/admin'
+
+const router = useRouter()
 
 // 数据
 const loading = ref(false)
@@ -272,60 +198,28 @@ const filterForm = reactive({
   keyword: ''
 })
 
-// 创建对话框
+// 批量选择相关
+const selectedAdmins = ref([])
+const selectionCount = computed(() => selectedAdmins.value.length)
+
+const checkSelectable = (row) => {
+  return row.role !== 'root'
+}
+
+// 创建对话框 - 从普通用户选择
 const createDialogVisible = ref(false)
-const createFormRef = ref(null)
+const usersLoading = ref(false)
+const normalUsers = ref([])
+const selectedUsers = ref([])
 const creating = ref(false)
-const createForm = reactive({
-  username: '',
-  email: '',
-  password: '',
-  role: 'admin',
-  can_switch_role: true
+const createFilterForm = reactive({
+  keyword: ''
 })
 
-const createRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' }
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 位', trigger: 'blur' }
-  ]
-}
-
-const editDialogVisible = ref(false)
-const editFormRef = ref(null)
-const updating = ref(false)
-const editForm = reactive({
-  id: null,
-  username: '',
-  email: '',
-  phone: '',
-  role: '',
-  is_active: true,
-  can_switch_role: true,
-  original_role: null,
-  password: '',
-  last_login_at: null,
-  created_at: null
-})
-
-const editRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' }
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
-  ]
-}
+// 批量操作结果
+const resultDialogVisible = ref(false)
+const resultDialogTitle = ref('')
+const operationResults = ref([])
 
 // 方法
 const fetchAdmins = async () => {
@@ -358,129 +252,94 @@ const handleReset = () => {
   fetchAdmins()
 }
 
-const showCreateDialog = () => {
+const handleSelectionChange = (selection) => {
+  selectedAdmins.value = selection
+}
+
+const clearSelection = () => {
+  selectedAdmins.value = []
+}
+
+const showCreateDialog = async () => {
   createDialogVisible.value = true
+  await searchNormalUsers()
+}
+
+const searchNormalUsers = async () => {
+  usersLoading.value = true
+  try {
+    const response = await getUsers({
+      page: 1,
+      page_size: 100,
+      role: 'student',
+      keyword: createFilterForm.keyword || undefined
+    })
+    // 过滤掉已经是管理员的用户
+    normalUsers.value = (response.users || []).filter(
+      (u) => u.role === 'student' || u.role === 'user'
+    )
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '获取用户列表失败')
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+const handleUserSelectionChange = (selection) => {
+  selectedUsers.value = selection
 }
 
 const resetCreateForm = () => {
-  createFormRef.value?.resetFields()
-  createForm.username = ''
-  createForm.email = ''
-  createForm.password = ''
-  createForm.role = 'admin'
-  createForm.can_switch_role = true
+  createFilterForm.keyword = ''
+  normalUsers.value = []
+  selectedUsers.value = []
 }
 
-const resetEditForm = () => {
-  editFormRef.value?.resetFields()
-  editForm.id = null
-  editForm.username = ''
-  editForm.email = ''
-  editForm.phone = ''
-  editForm.role = ''
-  editForm.is_active = true
-  editForm.can_switch_role = true
-  editForm.original_role = null
-  editForm.password = ''
-  editForm.last_login_at = null
-  editForm.created_at = null
-}
-
-const applyAdminInfo = (admin) => {
-  editForm.id = admin.id
-  editForm.username = admin.username || ''
-  editForm.email = admin.email || ''
-  editForm.phone = admin.phone || ''
-  editForm.role = admin.role || ''
-  editForm.is_active = admin.is_active ?? true
-  editForm.can_switch_role = admin.can_switch_role ?? true
-  editForm.original_role = admin.original_role || null
-  editForm.password = ''
-  editForm.last_login_at = admin.last_login_at || null
-  editForm.created_at = admin.created_at || null
+const goToDetail = (row) => {
+  // 跳转到用户详情页（复用用户详情界面），并标记来源
+  router.push({
+    path: `/admin/users/${row.id}`,
+    query: { from: 'admin-management' }
+  })
 }
 
 const handleCreate = async () => {
-  const valid = await createFormRef.value?.validate()
-  if (!valid) return
+  if (selectedUsers.value.length === 0) {
+    ElMessage.warning('请至少选择一个用户')
+    return
+  }
 
+  try {
+    await ElMessageBox.confirm(
+      `确定要将选中的 ${selectedUsers.value.length} 个普通用户提升为管理员吗？`,
+      '确认提升',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  loading.value = true
   creating.value = true
   try {
-    await createAdmin(createForm)
-    ElMessage.success('管理员创建成功')
+    const results = await Promise.allSettled(
+      selectedUsers.value.map((user) => updateAdminRole(user.id, 'admin'))
+    )
+    operationResults.value = results.map((result, index) => ({
+      username: selectedUsers.value[index].username,
+      success: result.status === 'fulfilled',
+      message: result.status === 'fulfilled' ? '已提升为管理员' : (result.reason?.response?.data?.detail || '操作失败')
+    }))
+    resultDialogTitle.value = `新增管理员结果（${operationResults.value.filter(r => r.success).length} 成功）`
+    resultDialogVisible.value = true
     createDialogVisible.value = false
+    clearSelection()
     fetchAdmins()
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '创建管理员失败')
+    ElMessage.error(error.response?.data?.detail || '操作失败')
   } finally {
+    loading.value = false
     creating.value = false
-  }
-}
-
-const showEditDialog = async (row) => {
-  try {
-    const detail = await getAdminDetail(row.id)
-    applyAdminInfo(detail)
-    editDialogVisible.value = true
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '获取管理员详情失败')
-  }
-}
-
-const handleUpdate = async () => {
-  const valid = await editFormRef.value?.validate()
-  if (!valid) return
-
-  updating.value = true
-  try {
-    await updateAdmin(editForm.id, {
-      username: editForm.username,
-      email: editForm.email,
-      phone: editForm.phone || null,
-      is_active: editForm.is_active,
-      can_switch_role: editForm.can_switch_role,
-      original_role: editForm.can_switch_role ? (editForm.original_role || null) : null,
-      password: editForm.password || undefined
-    })
-    ElMessage.success('管理员信息更新成功')
-    editDialogVisible.value = false
-    fetchAdmins()
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '更新管理员失败')
-  } finally {
-    updating.value = false
-  }
-}
-
-const handleRoleChange = async (row, newRole) => {
-  if (row.role === newRole) return
-
-  try {
-    await updateAdminRole(row.id, newRole)
-    ElMessage.success('角色修改成功')
-    fetchAdmins()
-  } catch (error) {
-    const errorMsg = error.response?.data?.detail || '修改角色失败'
-    if (errorMsg.includes('最后一个')) {
-      ElMessage.error('无法修改最后一个 Root 用户的角色')
-    } else {
-      ElMessage.error(errorMsg)
-    }
-  }
-}
-
-const handleDelete = async (row) => {
-  try {
-    await deleteAdmin(row.id)
-    ElMessage.success('管理员删除成功')
-    fetchAdmins()
-  } catch (error) {
-    const errorMsg = error.response?.data?.detail || '删除管理员失败'
-    if (errorMsg.includes('最后一个')) {
-      ElMessage.error('无法删除最后一个 Root 用户')
-    } else {
-      ElMessage.error(errorMsg)
-    }
   }
 }
 
@@ -490,6 +349,78 @@ const handleResetPassword = async (row) => {
     ElMessage.success(`已重置密码，临时密码：${response.temp_password}`)
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '重置管理员密码失败')
+  }
+}
+
+// 批量操作
+const handleBatchResetPassword = async () => {
+  if (selectedAdmins.value.length === 0) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要重置选中的 ${selectedAdmins.value.length} 个管理员的密码吗？`,
+      '确认重置密码',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  loading.value = true
+  try {
+    const results = await Promise.allSettled(
+      selectedAdmins.value.map((admin) => resetAdminPassword(admin.id))
+    )
+    const successCount = results.filter((r) => r.status === 'fulfilled').length
+    operationResults.value = results.map((result, index) => ({
+      username: selectedAdmins.value[index].username,
+      success: result.status === 'fulfilled',
+      message: result.status === 'fulfilled'
+        ? `新密码：${result.value.temp_password}`
+        : (result.reason?.response?.data?.detail || '操作失败')
+    }))
+    resultDialogTitle.value = `重置密码结果（${successCount} 成功）`
+    resultDialogVisible.value = true
+    clearSelection()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '操作失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleBatchDemote = async () => {
+  if (selectedAdmins.value.length === 0) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要将选中的 ${selectedAdmins.value.length} 个管理员降级为普通用户吗？`,
+      '确认降级',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  loading.value = true
+  try {
+    const results = await Promise.allSettled(
+      selectedAdmins.value.map((admin) => updateAdminRole(admin.id, 'student'))
+    )
+    const successCount = results.filter((r) => r.status === 'fulfilled').length
+    operationResults.value = results.map((result, index) => ({
+      username: selectedAdmins.value[index].username,
+      success: result.status === 'fulfilled',
+      message: result.status === 'fulfilled' ? '已降级为普通用户' : (result.reason?.response?.data?.detail || '操作失败')
+    }))
+    resultDialogTitle.value = `撤销管理员结果（${successCount} 成功）`
+    resultDialogVisible.value = true
+    clearSelection()
+    fetchAdmins()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '操作失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -546,15 +477,66 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.batch-toolbar {
+  margin-bottom: 20px;
+  border: 1px solid var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9);
+}
+
+.batch-toolbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  gap: 20px;
+}
+
+.selection-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #606266;
+}
+
+.selection-icon {
+  font-size: 18px;
+  color: var(--el-color-primary);
+}
+
+.summary-text {
+  font-size: 14px;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.create-tip {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fdf6ec;
+  border-radius: 4px;
+  color: #909399;
+  font-size: 13px;
+}
+
+.user-search-form {
+  margin-bottom: 16px;
+}
+
+.selected-count {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--el-color-primary-light-9);
+  border-radius: 4px;
+  color: var(--el-color-primary);
+  font-size: 13px;
+}
+
 .pagination {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-}
-
-.form-hint {
-  margin-left: 10px;
-  color: #909399;
-  font-size: 12px;
 }
 </style>

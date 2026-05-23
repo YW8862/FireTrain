@@ -75,14 +75,14 @@
 
         <div class="batch-actions">
           <el-tooltip
-            content="请至少选择一个普通用户"
+            content="请至少选择一个用户"
             placement="top"
-            :disabled="selectionStats.student > 0"
+            :disabled="selectionStats.total > 0"
           >
             <span class="action-wrap">
               <el-button
                 type="warning"
-                :disabled="selectionStats.student === 0"
+                :disabled="selectionStats.total === 0"
                 @click="handleBatchResetPassword"
               >
                 <el-icon><Key /></el-icon>
@@ -92,49 +92,14 @@
           </el-tooltip>
 
           <el-tooltip
-            v-if="isRoot"
-            content="请至少选择一个普通用户"
+            content="请至少选择一个用户"
             placement="top"
-            :disabled="selectionStats.student > 0"
-          >
-            <span class="action-wrap">
-              <el-button
-                type="success"
-                :disabled="selectionStats.student === 0"
-                @click="handleBatchPromote"
-              >
-                <el-icon><Top /></el-icon>
-                设为管理员
-              </el-button>
-            </span>
-          </el-tooltip>
-
-          <el-tooltip
-            v-if="isRoot"
-            content="请至少选择一个管理员"
-            placement="top"
-            :disabled="selectionStats.admin > 0"
-          >
-            <span class="action-wrap">
-              <el-button
-                :disabled="selectionStats.admin === 0"
-                @click="handleBatchDemote"
-              >
-                <el-icon><Bottom /></el-icon>
-                撤销管理员
-              </el-button>
-            </span>
-          </el-tooltip>
-
-          <el-tooltip
-            content="请至少选择一个普通用户"
-            placement="top"
-            :disabled="selectionStats.student > 0"
+            :disabled="selectionStats.total > 0"
           >
             <span class="action-wrap">
               <el-button
                 type="danger"
-                :disabled="selectionStats.student === 0"
+                :disabled="selectionStats.total === 0"
                 @click="handleBatchDelete"
               >
                 <el-icon><Delete /></el-icon>
@@ -204,7 +169,7 @@
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small">
-              {{ row.is_active ? '正常' : '禁用' }}
+              {{ row.is_active ? '正常' : '冻结' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -312,16 +277,13 @@ import {
   Search,
   Plus,
   Key,
-  Top,
-  Bottom,
   Delete,
   Select
 } from '@element-plus/icons-vue'
 import {
   getUsers,
   deleteUser,
-  resetUserPassword,
-  updateAdminRole
+  resetUserPassword
 } from '@/api/admin'
 import { useUserStore } from '@/store/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -329,7 +291,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const userStore = useUserStore()
 const router = useRouter()
 const currentUserId = computed(() => userStore.userInfo?.id)
-const isRoot = computed(() => userStore.effectiveRole === 'root')
+const currentUserRole = computed(() => userStore.effectiveRole)
+const isRoot = computed(() => currentUserRole.value === 'root')
 
 const STUDENT_ROLES = ['student', 'user']
 const isStudentRow = (row) => STUDENT_ROLES.includes(row.role)
@@ -364,6 +327,9 @@ const getRowDisableReason = (row) => {
   }
   if (row.id === currentUserId.value) {
     return '不能对当前登录账号执行批量操作'
+  }
+  if (currentUserRole.value !== 'root') {
+    return '仅 Root 用户可执行批量删除'
   }
   return '该账号暂不支持批量操作'
 }
@@ -548,12 +514,12 @@ const hasResetSuccess = computed(() =>
 )
 
 const handleBatchResetPassword = async () => {
-  const targets = selectedRows.value.filter((row) => isStudentRow(row))
+  const targets = selectedRows.value.filter((row) => isStudentRow(row) || row.role === 'admin')
   if (targets.length === 0) return
 
   const confirmed = await confirmBatchAction({
     title: '批量重置密码',
-    message: `将对选中的 ${targets.length} 个普通用户重置密码，操作不可撤销，确认继续？`,
+    message: `将对选中的 ${targets.length} 个用户重置密码（包括 ${selectionStats.value.admin} 个管理员），操作不可撤销，确认继续？`,
     confirmText: '确认重置',
     type: 'warning'
   })
@@ -604,76 +570,19 @@ const copyResetPasswords = async () => {
   }
 }
 
-// 批量设为管理员
-const handleBatchPromote = async () => {
-  const targets = selectedRows.value.filter((row) => isStudentRow(row))
-  if (targets.length === 0) return
-
-  const confirmed = await confirmBatchAction({
-    title: '批量设为管理员',
-    message: `将提升选中的 ${targets.length} 个普通用户为管理员，确认继续？`,
-    confirmText: '确认提升',
-    type: 'warning'
-  })
-  if (!confirmed) return
-
-  loading.value = true
-  try {
-    const results = await Promise.allSettled(
-      targets.map((user) => updateAdminRole(user.id, 'admin'))
-    )
-    const mapped = results.map((result, index) => ({
-      username: targets[index].username,
-      ok: result.status === 'fulfilled',
-      message: result.status === 'fulfilled' ? '已提升' : pickErrorMessage(result.reason)
-    }))
-    summarizeBatchResult(mapped, '批量设为管理员成功', '批量提升完成')
-  } finally {
-    clearSelection()
-    await fetchUsers()
-    loading.value = false
-  }
-}
-
-// 批量撤销管理员
-const handleBatchDemote = async () => {
-  const targets = selectedRows.value.filter((row) => row.role === 'admin')
-  if (targets.length === 0) return
-
-  const confirmed = await confirmBatchAction({
-    title: '批量撤销管理员',
-    message: `将撤销选中的 ${targets.length} 个管理员权限，降级为普通用户，确认继续？`,
-    confirmText: '确认撤销',
-    type: 'warning'
-  })
-  if (!confirmed) return
-
-  loading.value = true
-  try {
-    const results = await Promise.allSettled(
-      targets.map((user) => updateAdminRole(user.id, 'student'))
-    )
-    const mapped = results.map((result, index) => ({
-      username: targets[index].username,
-      ok: result.status === 'fulfilled',
-      message: result.status === 'fulfilled' ? '已撤销' : pickErrorMessage(result.reason)
-    }))
-    summarizeBatchResult(mapped, '批量撤销管理员成功', '批量撤销完成')
-  } finally {
-    clearSelection()
-    await fetchUsers()
-    loading.value = false
-  }
-}
-
 // 批量删除
 const handleBatchDelete = async () => {
-  const targets = selectedRows.value.filter((row) => isStudentRow(row))
+  const isRoot = currentUserRole.value === 'root'
+  const targets = selectedRows.value.filter((row) => {
+    if (isStudentRow(row)) return true
+    if (isRoot && row.role === 'admin') return true
+    return false
+  })
   if (targets.length === 0) return
 
   const confirmed = await confirmBatchAction({
     title: '批量删除用户',
-    message: `确定要删除选中的 ${targets.length} 个普通用户吗？该操作不可恢复！`,
+    message: `确定要删除选中的 ${targets.length} 个用户吗？（包括 ${selectionStats.value.admin} 个管理员）该操作不可恢复！`,
     confirmText: '确认删除',
     type: 'warning'
   })

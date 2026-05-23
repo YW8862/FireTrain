@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,32 +59,34 @@ async def get_training_trend(
 
 @router.get("/step-analysis", response_model=StepAnalysisResponse)
 async def get_step_analysis_api(
+    training_type: Optional[str] = Query(None, description="训练类型筛选"),
     stats_service: StatisticsService = Depends(get_statistics_service),
     current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取步骤分析
-    
+
     分析用户在各操作步骤上的表现，提供改进建议
     """
-    analysis = await stats_service.get_step_analysis(current_user_id)
+    analysis = await stats_service.get_step_analysis(current_user_id, training_type=training_type)
     return StepAnalysisResponse(step_analysis=analysis)
 
 
 @router.get("/overview", response_model=StatisticsOverviewResponse)
 async def get_statistics_overview(
     days: int = Query(7, ge=1, le=30, description="趋势天数"),
+    training_type: Optional[str] = Query(None, description="训练类型筛选"),
     stats_service: StatisticsService = Depends(get_statistics_service),
     current_user_id: int = Depends(get_current_user_id),
 ):
     """
     获取统计概览
-    
+
     包含个人统计、近期趋势和步骤分析的完整数据
     适用于首页看板展示
     """
-    overview = await stats_service.get_statistics_overview(current_user_id, days=days)
-    
+    overview = await stats_service.get_statistics_overview(current_user_id, days=days, training_type=training_type)
+
     return StatisticsOverviewResponse(
         personal_stats=overview["personal_stats"],
         recent_trend=TrainingTrendResponse(

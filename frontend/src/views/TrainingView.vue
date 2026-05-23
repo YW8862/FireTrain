@@ -16,7 +16,7 @@
             训练过程中请保持人员完整入镜，按规范步骤完成操作，系统将生成本次实操测评结果。
           </p>
         </div>
-        <el-tag class="status-pill" :type="getStatusType(currentTraining?.status || 'created')" size="large">
+        <el-tag class="status-pill" :type="getStatusType(currentTraining?.status || 'pending')" size="large">
           {{ currentTraining ? getStatusText(currentTraining.status) : '未开始' }}
         </el-tag>
       </div>
@@ -36,8 +36,8 @@
           <div class="prep-main">
             <div class="training-header">
               <h2>训练准备</h2>
-              <el-tag :type="getStatusType('created')" size="large">
-                {{ getStatusText('created') }}
+              <el-tag :type="getStatusType('pending')" size="large">
+                {{ getStatusText('pending') }}
               </el-tag>
             </div>
 
@@ -308,9 +308,10 @@ const trainingForm = reactive({
 const currentTraining = ref(null)
 
 const currentStepTitle = computed(() => {
-  const currentStep = steps.find((step) => step.status === 'doing')
+  const stepsValue = steps.value
+  const currentStep = stepsValue.find((step) => step.status === 'doing')
   if (currentStep) return currentStep.name
-  const finishedCount = steps.filter((step) => step.status === 'done').length
+  const finishedCount = stepsValue.filter((step) => step.status === 'done').length
   return finishedCount ? `步骤 ${finishedCount + 1}` : '训练准备'
 })
 
@@ -778,7 +779,7 @@ const getStepColor = (status) => {
 // 获取状态标签类型
 const getStatusType = (status) => {
   const map = {
-    created: 'info',
+    pending: 'info',
     processing: 'warning',
     done: 'success',
     failed: 'danger'
@@ -789,8 +790,8 @@ const getStatusType = (status) => {
 // 获取状态文本
 const getStatusText = (status) => {
   const map = {
-    created: '未开始',
-    processing: '进行中',
+    pending: '等待检测中',
+    processing: '检测中',
     done: '已完成',
     failed: '失败'
   }

@@ -104,15 +104,20 @@ class TrainingRepository:
         self,
         user_id: int,
         completed_statuses: list[str],
+        training_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """仅返回已完成训练的 step_scores，减少统计分析的数据载荷。"""
+        conditions = [
+            TrainingRecord.user_id == user_id,
+            TrainingRecord.status.in_(completed_statuses),
+            TrainingRecord.step_scores.is_not(None),
+        ]
+        if training_type:
+            conditions.append(TrainingRecord.training_type == training_type)
+
         query = (
             select(TrainingRecord.step_scores)
-            .where(
-                TrainingRecord.user_id == user_id,
-                TrainingRecord.status.in_(completed_statuses),
-                TrainingRecord.step_scores.is_not(None),
-            )
+            .where(*conditions)
             .order_by(TrainingRecord.created_at.desc())
         )
         result = await self.session.execute(query)

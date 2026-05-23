@@ -62,7 +62,10 @@
             <span>上传视频检测</span>
           </el-menu-item>
           
-          <el-menu-item index="/admin/logs">
+          <el-menu-item
+            v-if="userStore.effectiveRole === 'root'"
+            index="/admin/logs"
+          >
             <el-icon><List /></el-icon>
             <span>操作日志</span>
           </el-menu-item>
@@ -73,7 +76,7 @@
             index="/admin/admins"
           >
             <el-icon><Key /></el-icon>
-            <span>管理员管理</span>
+            <span>权限管理</span>
           </el-menu-item>
         </el-menu>
       </el-aside>

@@ -288,6 +288,7 @@ class StatisticsService:
                     step_name=step_name,
                     average_score=self._to_decimal(average_score),
                     success_rate=self._to_decimal(success_rate),
+                    training_count=training_count,
                     improvement_suggestion=self._build_improvement_suggestion(
                         self._to_decimal(average_score),
                         self._to_decimal(success_rate),
@@ -343,6 +344,7 @@ class StatisticsService:
                     step_name=step_name,
                     average_score=self._to_decimal(average_score),
                     success_rate=self._to_decimal(success_rate),
+                    training_count=training_count,
                     improvement_suggestion=self._build_improvement_suggestion(
                         self._to_decimal(average_score),
                         self._to_decimal(success_rate),
@@ -400,21 +402,22 @@ class StatisticsService:
         )
         return self._build_training_trend_from_summary(summary, days)
 
-    async def get_step_analysis(self, user_id: int) -> List[StepAnalysisItem]:
+    async def get_step_analysis(self, user_id: int, training_type: Optional[str] = None) -> List[StepAnalysisItem]:
         """获取用户各步骤表现分析。"""
         step_scores_list = await self.training_repo.get_completed_step_scores_by_user_id(
             user_id,
             sorted(self.COMPLETED_STATUSES),
+            training_type=training_type,
         )
         return self._build_step_analysis_from_step_scores(step_scores_list)
 
-    async def get_statistics_overview(self, user_id: int, days: int = 7) -> Dict[str, Any]:
+    async def get_statistics_overview(self, user_id: int, days: int = 7, training_type: Optional[str] = None) -> Dict[str, Any]:
         """统计页首屏聚合：数据库先做概览/趋势聚合，仅对步骤分析拉取 step_scores。"""
         completed_statuses = sorted(self.COMPLETED_STATUSES)
         start_date = datetime.utcnow().date() - timedelta(days=days - 1)
         personal_summary = await self.training_repo.get_personal_statistics_summary(user_id, completed_statuses)
         trend_summary = await self.training_repo.get_training_trend_summary(user_id, start_date, completed_statuses)
-        step_scores_list = await self.training_repo.get_completed_step_scores_by_user_id(user_id, completed_statuses)
+        step_scores_list = await self.training_repo.get_completed_step_scores_by_user_id(user_id, completed_statuses, training_type=training_type)
 
         return {
             "personal_stats": self._build_personal_statistics_from_summary(user_id, personal_summary),

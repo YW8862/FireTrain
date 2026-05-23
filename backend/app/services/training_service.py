@@ -28,7 +28,7 @@ class TrainingService:
         training = TrainingRecord(
             user_id=user_id,
             training_type=self._normalize_training_type(request.training_type),
-            status="created",
+            status="pending",
             duration_seconds=request.duration_seconds if hasattr(request, "duration_seconds") else None,
             started_at=datetime.utcnow(),
         )
@@ -57,7 +57,7 @@ class TrainingService:
         if not training:
             return None
 
-        if training.status not in ["created", "processing"]:
+        if training.status not in ["pending", "processing"]:
             raise ValueError(f"当前状态不能完成训练：{training.status}")
         if not training.video_path:
             raise ValueError("视频路径为空，无法完成训练")

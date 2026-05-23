@@ -1,0 +1,40 @@
+# 默认站点 - 阻止 IP 和未授权域名访问
+:80, :443 {
+	@unauthorized {
+		not {
+			host firetrain.cn www.firetrain.cn
+		}
+	}
+	respond @unauthorized "Access Denied" 403
+}
+
+# 主站
+firetrain.cn {
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+
+	handle /docs* {
+		reverse_proxy localhost:8000
+	}
+
+	handle /health* {
+		reverse_proxy localhost:8000
+	}
+
+	handle /openapi.json {
+		reverse_proxy localhost:8000
+	}
+
+	handle /redoc* {
+		reverse_proxy localhost:8000
+	}
+
+	handle /* {
+		reverse_proxy localhost:5173
+	}
+}
+
+www.firetrain.cn {
+	redir https://firetrain.cn{uri}
+}

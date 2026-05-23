@@ -32,7 +32,7 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="用户名" prop="username">
-              <el-input v-model="form.username" placeholder="请输入用户名" />
+              <el-input v-model="form.username" placeholder="请输入用户名" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -60,25 +60,7 @@
               <el-switch v-model="form.is_active" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="允许切换角色">
-              <el-switch v-model="form.can_switch_role" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="原始角色">
-              <el-select
-                v-model="form.original_role"
-                clearable
-                :disabled="!form.can_switch_role"
-                placeholder="无"
-                style="width: 100%"
-              >
-                <el-option label="管理员" value="admin" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col v-if="!isCreateMode" :span="12">
+                    <el-col v-if="!isCreateMode" :span="12">
             <el-form-item label="最后登录">
               <span>{{ formatDate(form.last_login_at) }}</span>
             </el-form-item>
@@ -92,7 +74,7 @@
       </el-form>
     </el-card>
 
-    <template v-if="!isCreateMode">
+    <template v-if="!isCreateMode && !isViewingSelfAsRoot">
       <el-row :gutter="20" class="stats-row">
         <el-col :span="6">
           <el-card shadow="hover" class="stat-card">
@@ -225,9 +207,11 @@ import {
   resetUserPassword,
   updateUser
 } from '@/api/admin'
+import { useUserStore } from '@/store/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const formRef = ref(null)
 const saving = ref(false)
@@ -235,6 +219,13 @@ const recordsLoading = ref(false)
 const trendDays = ref(7)
 
 const isCreateMode = computed(() => route.name === 'AdminUserCreate')
+const isSuperAdmin = computed(() => userStore.userInfo?.role === 'root')
+// 当前登录的超级管理员查看自己详情时隐藏训练数据
+const isViewingSelfAsRoot = computed(() => {
+  const currentUserId = userStore.userInfo?.id
+  const viewedUserId = Number(route.params.id)
+  return currentUserId === viewedUserId && isSuperAdmin.value
+})
 
 const form = reactive({
   username: '',
@@ -242,8 +233,6 @@ const form = reactive({
   phone: '',
   password: '',
   is_active: true,
-  can_switch_role: false,
-  original_role: null,
   last_login_at: null,
   created_at: null
 })
@@ -282,8 +271,6 @@ const resetFormData = () => {
   form.phone = ''
   form.password = ''
   form.is_active = true
-  form.can_switch_role = false
-  form.original_role = null
   form.last_login_at = null
   form.created_at = null
 }
@@ -294,8 +281,6 @@ const applyUserInfo = (user) => {
   form.phone = user.phone || ''
   form.password = ''
   form.is_active = user.is_active ?? true
-  form.can_switch_role = user.can_switch_role ?? false
-  form.original_role = user.original_role || null
   form.last_login_at = user.last_login_at || null
   form.created_at = user.created_at || null
 }
@@ -363,10 +348,6 @@ const handleSave = async () => {
     return
   }
 
-  if (form.can_switch_role === false) {
-    form.original_role = null
-  }
-
   saving.value = true
   try {
     const payload = {
@@ -374,9 +355,7 @@ const handleSave = async () => {
       email: form.email,
       phone: form.phone || null,
       password: form.password || undefined,
-      is_active: form.is_active,
-      can_switch_role: form.can_switch_role,
-      original_role: form.original_role || null
+      is_active: form.is_active
     }
 
     if (isCreateMode.value) {
@@ -429,7 +408,12 @@ const goToReport = (trainingId) => {
 }
 
 const goBack = () => {
-  router.push('/admin/users')
+  // 根据来源路由返回
+  if (route.query.from === 'admin-management') {
+    router.push('/admin/admins')
+  } else {
+    router.push('/admin/users')
+  }
 }
 
 onMounted(() => {

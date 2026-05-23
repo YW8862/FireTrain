@@ -63,6 +63,7 @@ async def log_admin_action(
 ACTION_LABELS = {
     "DELETE_USER": "删除用户",
     "UPDATE_USER": "更新用户",
+    "CREATE_USER": "创建用户",
     "RESET_USER_PASSWORD": "重置用户密码",
     "DELETE_TRAINING": "删除训练记录",
     "UPDATE_TRAINING": "更新训练记录",
@@ -70,6 +71,7 @@ ACTION_LABELS = {
     "DELETE_VIDEO": "删除视频",
     "CREATE_ADMIN": "创建管理员",
     "DELETE_ADMIN": "删除管理员",
+    "UPDATE_ADMIN": "更新管理员",
     "UPDATE_ROLE": "更新角色",
     "RESET_ADMIN_PASSWORD": "重置管理员密码",
     "SWITCH_TO_USER": "切换到用户",

@@ -4,7 +4,7 @@ from typing import Optional, Annotated
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -31,6 +31,16 @@ from app.schemas.statistics import (
 )
 from app.schemas.training import TrainingHistoryResponse, TrainingRecordResponse
 
+
+def _get_client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return None
+
+
 router = APIRouter(prefix="/api/admin", tags=["后台管理"])
 
 # 创建类型别名以便使用
@@ -49,8 +59,6 @@ def _build_admin_info_response(user) -> AdminInfoResponse:
         email=user.email,
         phone=user.phone,
         role=user.role,
-        can_switch_role=user.can_switch_role,
-        original_role=user.original_role,
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
@@ -66,25 +74,10 @@ def _build_admin_user_info_response(user) -> AdminUserInfoResponse:
         email=user.email,
         phone=user.phone,
         role=user.role,
-        can_switch_role=user.can_switch_role,
-        original_role=user.original_role,
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
     )
-
-
-def _normalize_original_role(can_switch_role: bool, original_role: Optional[str]) -> Optional[str]:
-    if not can_switch_role:
-        return None
-    if original_role is None:
-        return None
-    if original_role not in {"admin", "root"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="original_role 只能是 admin、root 或空值",
-        )
-    return original_role
 
 
 async def _get_manageable_user(
@@ -99,7 +92,13 @@ async def _get_manageable_user(
             detail="用户不存在",
         )
 
+    # Root 用户可以访问任何人（包括自己）的详情
+    if current_user["role"] == "root":
+        return user
+
     if user.role not in MANAGEABLE_USER_ROLES:
+        if user.role == "admin" and current_user["role"] == "root":
+            return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="普通用户管理入口不能操作管理员或 Root 用户",
@@ -192,6 +191,7 @@ async def get_admins(
 async def create_admin(
     admin_data: AdminCreateRequest,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -234,7 +234,6 @@ async def create_admin(
         password_hash=hashed_password,
         phone=None,
         role=admin_data.role,
-        can_switch_role=admin_data.can_switch_role,
         is_active=True
     )
 
@@ -251,7 +250,8 @@ async def create_admin(
             "username": new_admin.username,
             "email": new_admin.email,
             "role": new_admin.role
-        }
+        },
+        ip_address=_get_client_ip(request)
     )
 
     return _build_admin_info_response(new_admin)
@@ -262,6 +262,7 @@ async def create_admin(
 async def delete_admin(
     admin_id: int,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -309,7 +310,8 @@ async def delete_admin(
             "username": user.username,
             "email": user.email,
             "role": user.role
-        }
+        },
+        ip_address=_get_client_ip(request)
     )
 
     return {"message": "管理员删除成功"}
@@ -321,6 +323,7 @@ async def update_admin_role(
     admin_id: int,
     role_data: AdminUpdateRoleRequest,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -367,10 +370,6 @@ async def update_admin_role(
     # 更新角色
     user.role = target_role
 
-    # 如果改为 admin，自动允许切换角色（便于在管理员与用户视图之间切换）
-    if target_role == "admin":
-        user.can_switch_role = True
-
     await user_repo.update(user, {})
 
     # 记录操作日志
@@ -384,7 +383,8 @@ async def update_admin_role(
             "username": user.username,
             "old_role": old_role,
             "new_role": target_role
-        }
+        },
+        ip_address=_get_client_ip(request)
     )
 
     return _build_admin_info_response(user)
@@ -409,6 +409,7 @@ async def update_admin(
     admin_id: int,
     admin_data: AdminUpdateRequest,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """更新管理员基础资料（仅 Root）。"""
@@ -430,18 +431,11 @@ async def update_admin(
                 detail="无法禁用最后一个 Root 用户",
             )
 
-    original_role = _normalize_original_role(
-        admin_data.can_switch_role,
-        admin_data.original_role,
-    )
-
     update_data = {
         "username": admin_data.username,
         "email": admin_data.email,
         "phone": admin_data.phone,
         "is_active": admin_data.is_active,
-        "can_switch_role": admin_data.can_switch_role,
-        "original_role": original_role,
     }
 
     if admin_data.password:
@@ -460,6 +454,7 @@ async def update_admin(
             "role": updated_user.role,
             "is_active": updated_user.is_active,
         },
+        ip_address=_get_client_ip(request),
     )
 
     return _build_admin_info_response(updated_user)
@@ -470,6 +465,7 @@ async def update_admin(
 async def reset_admin_password(
     admin_id: int,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """重置管理员密码（仅 Root）。"""
@@ -490,6 +486,7 @@ async def reset_admin_password(
         target_type="user",
         target_id=admin_id,
         details={"username": user.username},
+        ip_address=_get_client_ip(request)
     )
 
     return {
@@ -568,6 +565,7 @@ async def get_all_users(
 async def create_user(
     user_data: AdminUserCreateRequest,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """管理员创建普通用户。"""
@@ -580,11 +578,6 @@ async def create_user(
         email=user_data.email,
     )
 
-    original_role = _normalize_original_role(
-        user_data.can_switch_role,
-        user_data.original_role,
-    )
-
     new_user = User(
         username=user_data.username,
         email=user_data.email,
@@ -592,8 +585,6 @@ async def create_user(
         phone=user_data.phone,
         role=STANDARD_USER_ROLE,
         is_active=user_data.is_active,
-        can_switch_role=user_data.can_switch_role,
-        original_role=original_role,
     )
 
     await user_repo.create(new_user)
@@ -608,6 +599,7 @@ async def create_user(
             "username": new_user.username,
             "email": new_user.email,
         },
+        ip_address=_get_client_ip(request),
     )
 
     return _build_admin_user_info_response(new_user)
@@ -632,6 +624,7 @@ async def update_user_detail(
     user_id: int,
     user_data: AdminUserUpdateRequest,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """管理员更新普通用户资料。"""
@@ -645,22 +638,19 @@ async def update_user_detail(
         current_user_id=user.id,
     )
 
-    original_role = _normalize_original_role(
-        user_data.can_switch_role,
-        user_data.original_role,
-    )
-
     update_data = {
         "username": user_data.username,
         "email": user_data.email,
         "phone": user_data.phone,
         "is_active": user_data.is_active,
-        "can_switch_role": user_data.can_switch_role,
-        "original_role": original_role,
     }
 
     if user_data.password:
         update_data["password_hash"] = get_password_hash(user_data.password)
+
+    # 只有 root 可以修改用户角色
+    if user_data.role and current_user["role"] == "root":
+        update_data["role"] = user_data.role
 
     updated_user = await user_repo.update(user, update_data)
 
@@ -675,6 +665,7 @@ async def update_user_detail(
             "email": updated_user.email,
             "is_active": updated_user.is_active,
         },
+        ip_address=_get_client_ip(request),
     )
 
     return _build_admin_user_info_response(updated_user)
@@ -762,6 +753,7 @@ async def get_user_statistics_overview(
 async def delete_user(
     user_id: int,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -790,9 +782,10 @@ async def delete_user(
         action="DELETE_USER",
         target_type="user",
         target_id=user_id,
-        details={"username": user.username, "email": user.email}
+        details={"username": user.username, "email": user.email},
+        ip_address=_get_client_ip(request)
     )
-    
+
     return {"message": "用户删除成功"}
 
 
@@ -801,6 +794,7 @@ async def delete_user(
 async def reset_user_password(
     user_id: int,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -826,9 +820,10 @@ async def reset_user_password(
         action="RESET_USER_PASSWORD",
         target_type="user",
         target_id=user_id,
-        details={"username": user.username}
+        details={"username": user.username},
+        ip_address=_get_client_ip(request)
     )
-    
+
     return {
         "message": "密码重置成功",
         "temp_password": temp_password,
@@ -878,6 +873,7 @@ async def get_all_trainings(
 async def delete_training(
     training_id: int,
     current_user: CurrentUser,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """删除训练记录"""
@@ -898,9 +894,10 @@ async def delete_training(
         admin_id=current_user["id"],
         action="DELETE_TRAINING",
         target_type="training",
-        target_id=training_id
+        target_id=training_id,
+        ip_address=_get_client_ip(request)
     )
-    
+
     return {"message": "训练记录删除成功"}
 
 

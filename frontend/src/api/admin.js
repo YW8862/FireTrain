@@ -39,6 +39,14 @@ export function updateUser(userId, data) {
   })
 }
 
+export function updateUserRole(userId, role) {
+  return request({
+    url: `/admin/users/${userId}/role`,
+    method: 'put',
+    data: { role }
+  })
+}
+
 export function getUserStatistics(userId, params) {
   return request({
     url: `/admin/users/${userId}/stats/overview`,

@@ -6,7 +6,7 @@ FireTrain 是一个面向消防技能训练的智能评测系统，当前聚焦�
 
 - 前端基于 `Vue 3 + Vite + Element Plus`
 - 后端基于 `FastAPI + SQLAlchemy`
-- AI 能力基于 `YOLOv8`、`MediaPipe` 和规则/LLM 评分
+- AI 能力基于 `YOLOv8`、`MediaPipe`、规则评分引擎与 LLM（千问）智能评分
 - 默认开发数据库为 `SQLite`，仓库内也提供了 `MySQL` 的 `docker-compose` 编排
 
 当前已覆盖的核心链路：
@@ -15,6 +15,7 @@ FireTrain 是一个面向消防技能训练的智能评测系统，当前聚焦�
 - 灭火器训练创建、视频上传、预检测、完整评分
 - 训练报告、历史记录、个人统计
 - 后台管理员、用户、训练记录、操作日志、管理员视频检测
+- 支持多训练类型动态配置（步骤、提示语、评分维度）
 
 ## 技术栈
 
@@ -171,6 +172,10 @@ make docker-down       # Docker 停止
 | 后台 | `/api/admin` | 管理员、用户、训练数据、操作日志 |
 | 后台视频检测 | `/api/admin/video` | 管理员上传视频检测 |
 
+# 操作日志（返回中文操作类型）
+curl -X GET "http://localhost:8000/api/admin/logs?action=DELETE_USER&page=1&page_size=20" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
 示例：
 
 ```bash
@@ -254,6 +259,9 @@ make test
 - 前端路由：`frontend/src/router/index.js`
 - AI 推理主服务：`backend/app/ai/training_inference_service.py`
 - 训练数据访问层：`backend/app/repositories/training_repository.py`
+- 评分服务（含规则引擎 + LLM 评分）：`backend/app/ai/llm_scoring_service.py`
+- 训练类型配置（动态步骤/提示语）：`frontend/src/utils/trainingType.js`
+- PDF 报告导出：`frontend/src/utils/reportExport.js`
 
 ## 注意事项
 
