@@ -21,8 +21,10 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
     
-    async def get_by_email(self, email: str) -> Optional[User]:
+    async def get_by_email(self, email: Optional[str]) -> Optional[User]:
         """根据邮箱获取用户"""
+        if email is None:
+            return None
         result = await self.session.execute(
             select(User).where(User.email == email)
         )

@@ -32,7 +32,7 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="用户名" prop="username">
-              <el-input v-model="form.username" placeholder="请输入用户名" disabled />
+              <el-input v-model="form.username" placeholder="请输入用户名" :disabled="!isCreateMode" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -254,13 +254,23 @@ const trainings = reactive({
   records: []
 })
 
+const validatePassword = (rule, value, callback) => {
+  if (isCreateMode.value && !value) {
+    callback(new Error('请输入密码'))
+  } else {
+    callback()
+  }
+}
+
 const rules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
     { min: 3, max: 50, message: '用户名长度为 3-50 个字符', trigger: 'blur' }
   ],
+  password: [
+    { validator: validatePassword, trigger: 'blur' }
+  ],
   email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ]
 }
@@ -352,11 +362,12 @@ const handleSave = async () => {
   try {
     const payload = {
       username: form.username,
-      email: form.email,
+      email: form.email || null,
       phone: form.phone || null,
-      password: form.password || undefined,
+      password: form.password,
       is_active: form.is_active
     }
+    console.log('Creating user with payload:', JSON.stringify(payload, null, 2))
 
     if (isCreateMode.value) {
       await createUser(payload)

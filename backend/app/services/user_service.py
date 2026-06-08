@@ -175,14 +175,18 @@ class UserService:
         Returns:
             更新后的用户对象
         """
-        if user_data.email is not None and user_data.email != user.email:
+        if user_data.email is None:
+            # None 表示清空邮箱
+            user.email = None
+        elif user_data.email != user.email:
             existing_email = await self.user_repo.get_by_email(user_data.email)
             if existing_email and existing_email.id != user.id:
                 raise ValueError("邮箱已被注册")
             user.email = user_data.email
 
-        if user_data.phone is not None:
-            user.phone = user_data.phone
+        if user_data.phone is None:
+            # None 表示清空手机号
+            user.phone = None
 
         if user_data.new_password is not None:
             if not user_data.current_password:

@@ -111,7 +111,7 @@ async def _validate_unique_user_fields(
     user_repo: UserRepository,
     *,
     username: str,
-    email: str,
+    email: Optional[str],
     current_user_id: Optional[int] = None,
 ):
     existing_user = await user_repo.get_by_username(username)
@@ -121,12 +121,14 @@ async def _validate_unique_user_fields(
             detail="用户名已存在",
         )
 
-    existing_email = await user_repo.get_by_email(email)
-    if existing_email and existing_email.id != current_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="邮箱已存在",
-        )
+    # 只有当 email 不为空时才检查邮箱唯一性
+    if email is not None:
+        existing_email = await user_repo.get_by_email(email)
+        if existing_email and existing_email.id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="邮箱已存在",
+            )
 
 
 async def _get_admin_target(

@@ -1,8 +1,15 @@
+# -*- coding: utf-8 -*-
 """用户相关的 Pydantic Schema"""
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional, Union
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, BeforeValidator, EmailStr, Field
+
+
+def _empty_str_to_none(v):
+    if isinstance(v, str) and v == '':
+        return None
+    return v
 
 
 # ============ 请求 Schema ============
@@ -23,8 +30,8 @@ class UserLoginRequest(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     """用户信息更新请求"""
-    email: Optional[EmailStr] = Field(None, description="邮箱")
-    phone: Optional[str] = Field(None, max_length=20, description="手机号")
+    email: Annotated[Union[EmailStr, None], BeforeValidator(_empty_str_to_none)] = Field(None, description="邮箱")
+    phone: Annotated[Union[str, None], BeforeValidator(_empty_str_to_none)] = Field(None, max_length=20, description="手机号")
     current_password: Optional[str] = Field(None, min_length=6, max_length=50, description="当前密码")
     new_password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
 
@@ -35,7 +42,7 @@ class UserInfoResponse(BaseModel):
     """用户信息响应"""
     id: int
     username: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str] = None
     role: str
     is_active: bool
@@ -108,7 +115,7 @@ class AdminInfoResponse(BaseModel):
     """管理员信息响应"""
     id: int
     username: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str] = None
     role: str
     is_active: bool
@@ -122,17 +129,17 @@ class AdminInfoResponse(BaseModel):
 class AdminUserCreateRequest(BaseModel):
     """管理员创建普通用户请求"""
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    email: EmailStr = Field(..., description="邮箱")
+    email: Annotated[Union[EmailStr, None], BeforeValidator(_empty_str_to_none)] = Field(None, description="邮箱")
     password: str = Field(..., min_length=6, max_length=50, description="密码")
-    phone: Optional[str] = Field(None, max_length=20, description="手机号")
+    phone: Annotated[Union[str, None], BeforeValidator(_empty_str_to_none)] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
 
 
 class AdminUserUpdateRequest(BaseModel):
     """管理员更新普通用户请求"""
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    email: EmailStr = Field(..., description="邮箱")
-    phone: Optional[str] = Field(None, max_length=20, description="手机号")
+    email: Annotated[Union[EmailStr, None], BeforeValidator(_empty_str_to_none)] = Field(None, description="邮箱")
+    phone: Annotated[Union[str, None], BeforeValidator(_empty_str_to_none)] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
     password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
     role: Optional[str] = Field(None, description="用户角色 (user/admin)")
@@ -142,7 +149,7 @@ class AdminUserInfoResponse(BaseModel):
     """管理员视角的普通用户信息"""
     id: int
     username: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str] = None
     role: str
     is_active: bool
@@ -156,7 +163,7 @@ class AdminUserInfoResponse(BaseModel):
 class AdminUpdateRequest(BaseModel):
     """Root 更新管理员资料请求"""
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
-    email: EmailStr = Field(..., description="邮箱")
-    phone: Optional[str] = Field(None, max_length=20, description="手机号")
+    email: Annotated[Union[EmailStr, None], BeforeValidator(_empty_str_to_none)] = Field(None, description="邮箱")
+    phone: Annotated[Union[str, None], BeforeValidator(_empty_str_to_none)] = Field(None, max_length=20, description="手机号")
     is_active: bool = Field(True, description="是否启用")
     password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")

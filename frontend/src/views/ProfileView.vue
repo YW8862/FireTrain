@@ -51,12 +51,10 @@
               </div>
             </div>
 
-            <el-button type="primary" plain class="edit-btn" @click="openEditDialog">
-              编辑个人信息
-            </el-button>
-            <el-button type="danger" class="logout-btn" @click="handleLogout">
-              退出登录
-            </el-button>
+            <div class="button-wrapper">
+              <button class="btn-edit" @click="openEditDialog">编辑个人信息</button>
+              <button class="btn-logout" @click="handleLogout">退出登录</button>
+            </div>
           </el-card>
         </el-col>
 
@@ -131,7 +129,6 @@
             <h2>更新个人信息</h2>
             <p>维护你的账号资料与登录安全设置，修改后立即生效。</p>
           </div>
-          <div class="profile-edit-header-badge">用户名保持只读</div>
         </div>
       </template>
 
@@ -155,9 +152,6 @@
                 <strong>{{ userInfo.lastLoginAt ? formatDate(userInfo.lastLoginAt) : '暂无记录' }}</strong>
               </div>
             </div>
-            <div class="profile-edit-note">
-              建议优先维护常用邮箱和手机号，便于后续账号通知与身份确认。
-            </div>
           </div>
         </aside>
 
@@ -165,13 +159,9 @@
           <section class="edit-panel edit-panel--primary">
             <div class="edit-panel-header">
               <h3>账号资料</h3>
-              <p>这里用于更新基础联系信息，保存后会同步刷新个人中心展示内容。</p>
             </div>
             <el-form label-position="top" class="profile-edit-form">
               <div class="profile-form-grid">
-                <el-form-item label="用户名">
-                  <el-input :model-value="userInfo.username" disabled />
-                </el-form-item>
                 <el-form-item label="邮箱">
                   <el-input
                     v-model="editForm.email"
@@ -179,67 +169,64 @@
                     clearable
                   />
                 </el-form-item>
+                <el-form-item label="手机号">
+                  <el-input
+                    v-model="editForm.phone"
+                    placeholder="请输入手机号"
+                    maxlength="20"
+                    clearable
+                  />
+                </el-form-item>
               </div>
-              <el-form-item label="手机号">
-                <el-input
-                  v-model="editForm.phone"
-                  placeholder="请输入手机号"
-                  maxlength="20"
-                  clearable
-                />
-              </el-form-item>
             </el-form>
           </section>
 
           <section class="edit-panel edit-panel--muted">
             <div class="edit-panel-header">
               <h3>密码设置</h3>
-              <p>如需更新登录密码，请按顺序填写当前密码、新密码和确认密码。</p>
             </div>
             <el-form label-position="top" class="profile-edit-form">
-              <div class="profile-form-grid">
-                <el-form-item label="当前密码">
-                  <el-input
-                    v-model="editForm.currentPassword"
-                    type="password"
-                    show-password
-                    placeholder="请输入当前密码"
+              <el-form-item label="当前密码">
+                <el-input
+                  v-model="editForm.currentPassword"
+                  type="password"
+                  show-password
+                  placeholder="请输入当前密码"
                   maxlength="50"
                   autocomplete="current-password"
-                    clearable
-                  />
-                </el-form-item>
+                  clearable
+                />
+              </el-form-item>
+              <div class="profile-form-grid">
                 <el-form-item label="新密码">
                   <el-input
                     v-model="editForm.newPassword"
                     type="password"
                     show-password
                     placeholder="不少于 6 位"
-                  maxlength="50"
-                  autocomplete="new-password"
+                    maxlength="50"
+                    autocomplete="new-password"
+                    clearable
+                  />
+                </el-form-item>
+                <el-form-item label="确认新密码">
+                  <el-input
+                    v-model="editForm.confirmPassword"
+                    type="password"
+                    show-password
+                    placeholder="请再次输入新密码"
+                    maxlength="50"
+                    autocomplete="new-password"
                     clearable
                   />
                 </el-form-item>
               </div>
-              <el-form-item label="确认新密码">
-                <el-input
-                  v-model="editForm.confirmPassword"
-                  type="password"
-                  show-password
-                  placeholder="请再次输入新密码"
-                  maxlength="50"
-                  autocomplete="new-password"
-                  clearable
-                />
-              </el-form-item>
             </el-form>
-            <div class="edit-tip">如果本次不修改密码，密码相关输入框可以留空。</div>
           </section>
         </div>
       </div>
       <template #footer>
         <div class="profile-edit-footer">
-          <div class="profile-edit-footer-text">保存后将立即更新当前账号资料。</div>
           <div class="profile-edit-footer-actions">
             <el-button @click="editDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="handleSaveProfile">保存更改</el-button>
@@ -355,15 +342,22 @@ const openEditDialog = () => {
 }
 
 const handleSaveProfile = async () => {
-  if (!editForm.email?.trim()) {
-    ElMessage.warning('请输入邮箱')
-    return
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const trimmedEmail = editForm.email?.trim() || ''
+  const originalEmail = userInfo.email || ''
+
+  // 邮箱格式验证
+  if (trimmedEmail) {
+    // 邮箱不为空时，格式必须正确
+    if (!emailPattern.test(trimmedEmail)) {
+      ElMessage.warning('邮箱格式不正确，请输入正确的邮箱地址')
+      return
+    }
   }
 
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailPattern.test(editForm.email.trim())) {
-    ElMessage.warning('邮箱格式不正确')
-    return
+  // 如果邮箱没变（原来就是格式错误的旧数据），只是提醒但不阻止
+  if (trimmedEmail === originalEmail && trimmedEmail && !emailPattern.test(trimmedEmail)) {
+    ElMessage.warning('您的邮箱格式存在问题，建议更新为正确格式，本次将保存其他信息')
   }
 
   if (editForm.currentPassword || editForm.newPassword || editForm.confirmPassword) {
@@ -400,8 +394,8 @@ const handleSaveProfile = async () => {
   saving.value = true
   try {
     const payload = {
-      email: editForm.email.trim(),
-      phone: editForm.phone?.trim() || null
+      phone: editForm.phone?.trim() || null,
+      email: trimmedEmail
     }
 
     if (editForm.newPassword) {
@@ -549,25 +543,28 @@ onMounted(() => {
 }
 
 .profile-avatar {
-  width: 76px;
-  height: 76px;
-  margin: 0 auto 14px;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: rgba(30, 64, 175, 0.12);
   color: var(--ft-color-primary);
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
 }
 
 .profile-summary h2 {
   margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .profile-summary p {
-  margin: 8px 0 12px;
+  margin: 6px 0 10px;
+  font-size: 13px;
   color: var(--ft-color-text-tertiary);
 }
 
@@ -582,27 +579,69 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: 10px;
   background: var(--ft-color-surface-muted);
+  font-size: 14px;
 }
 
 .meta-item span {
   color: var(--ft-color-text-tertiary);
+  font-size: 13px;
 }
 
 .meta-item strong {
   text-align: right;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ft-color-text-secondary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.logout-btn {
+.profile-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+}
+
+.button-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   width: 100%;
   margin-top: 20px;
 }
 
-.edit-btn {
+.btn-edit,
+.btn-logout {
   width: 100%;
-  margin-top: 20px;
+  height: 34px;
+  border: none;
+  border-radius: var(--el-border-radius-base);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn-edit {
+  background-color: var(--ft-color-primary);
+  color: #fff;
+}
+
+.btn-logout {
+  background-color: var(--ft-color-danger);
+  color: #fff;
+}
+
+.btn-edit:hover {
+  background-color: var(--ft-color-primary-hover);
+}
+
+.btn-logout:hover {
+  background-color: var(--ft-color-danger-hover);
 }
 
 .profile-content {
