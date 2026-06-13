@@ -150,9 +150,11 @@ def test_invalid_token():
 
 def test_training_workflow_with_auth():
     """测试带认证的完整训练流程"""
+    import os
+    import tempfile
     import uuid
     unique_id = str(uuid.uuid4())[:8]
-    
+
     # 1. 注册并登录
     client.post(
         "/api/user/register",
@@ -162,7 +164,7 @@ def test_training_workflow_with_auth():
             "password": "test123456"
         }
     )
-    
+
     login_response = client.post(
         "/api/user/login",
         data={
@@ -170,10 +172,10 @@ def test_training_workflow_with_auth():
             "password": "test123456"
         }
     )
-    
+
     token = login_response.json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
-    
+
     # 2. 开始训练
     start_response = client.post(
         "/api/training/start",
@@ -182,26 +184,41 @@ def test_training_workflow_with_auth():
     )
     assert start_response.status_code == 200
     training_id = start_response.json()["training_id"]
-    
-    # 3. 完成训练
-    complete_response = client.post(
-        f"/api/training/complete/{training_id}",
-        headers=headers
-    )
-    assert complete_response.status_code == 200
-    
-    # 4. 查询详情
+
+    # 3. 上传一个真实存在的占位视频文件（complete 要求 os.path.exists）
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp.write(b"fake video content for middleware test")
+        tmp_video_path = tmp.name
+    try:
+        upload_response = client.post(
+            "/api/training/upload",
+            json={"training_id": training_id, "video_path": tmp_video_path},
+            headers=headers,
+        )
+        assert upload_response.status_code == 200
+
+        # 4. 完成训练（视频分析会失败，service 自动降级到 0 分并返回 200）
+        complete_response = client.post(
+            f"/api/training/complete/{training_id}?use_ai_scoring=false",
+            headers=headers,
+        )
+        assert complete_response.status_code == 200
+    finally:
+        if os.path.exists(tmp_video_path):
+            os.unlink(tmp_video_path)
+
+    # 5. 查询详情
     detail_response = client.get(
         f"/api/training/{training_id}",
-        headers=headers
+        headers=headers,
     )
     assert detail_response.status_code == 200
     assert detail_response.json()["status"] == "done"
-    
-    # 5. 查询历史
+
+    # 6. 查询历史
     history_response = client.get(
         "/api/training/history",
-        headers=headers
+        headers=headers,
     )
     assert history_response.status_code == 200
     assert history_response.json()["total"] >= 1

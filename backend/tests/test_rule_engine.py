@@ -1,7 +1,7 @@
 """测试规则引擎和反馈生成器"""
 import pytest
-from decimal import Decimal
-from app.ai.rule_engine import RuleEngine, PerformanceLevel
+from app.ai.rule_engine import RuleEngine
+from app.ai.fire_extinguisher_standard import get_performance_level
 from app.ai.feedback_generator import FeedbackGenerator
 
 
@@ -15,137 +15,123 @@ class TestRuleEngine:
     
     def test_action_completeness_calculation(self, rule_engine):
         """测试动作完整性计算"""
-        action_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 85},
-                "step2": {"step_name": "提灭火器", "score": 90},
-                "step3": {"step_name": "拔保险销", "score": 75},
-            }
+        step_scores = {
+            "step1": {"step_name": "准备阶段", "score": 85, "weight": 0.2},
+            "step2": {"step_name": "提灭火器", "score": 90, "weight": 0.2},
+            "step3": {"step_name": "拔保险销", "score": 75, "weight": 0.2},
         }
-        
-        score = rule_engine._calculate_action_completeness(action_scores)
-        
-        assert isinstance(score, Decimal)
+
+        score = rule_engine._calculate_action_completeness(step_scores)
+
+        assert isinstance(score, (int, float))
         assert 0 <= score <= 100
-    
+
     def test_pose_standardization_calculation(self, rule_engine):
         """测试姿态规范性计算"""
-        pose_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 88, "weight": 0.2},
-                "step2": {"step_name": "提灭火器", "score": 92, "weight": 0.15},
-            }
+        step_feature_summary = {
+            "step1": {"pose_quality_score": 88, "completed": True},
+            "step2": {"pose_quality_score": 92, "completed": True},
         }
-        
-        score = rule_engine._calculate_pose_standardization(pose_scores)
-        
-        assert isinstance(score, Decimal)
+        pose_stats_summary = {
+            "body": {"stability": 25.0},
+        }
+
+        score = rule_engine._calculate_pose_standardization(step_feature_summary, pose_stats_summary)
+
+        assert isinstance(score, (int, float))
         assert 0 <= score <= 100
-    
+
     def test_timeliness_within_range(self, rule_engine):
         """测试时效性计算（标准时间内）"""
-        duration = Decimal("120")  # 2 分钟，在标准范围内
-        
         score = rule_engine._calculate_timeliness(
-            duration_seconds=duration,
+            duration_seconds=120.0,
             training_type="fire_extinguisher"
         )
-        
-        assert score == Decimal("100")
-    
+
+        assert score == 100.0
+
     def test_timeliness_too_slow(self, rule_engine):
         """测试时效性计算（超时）"""
-        duration = Decimal("180")  # 3 分钟，超出标准范围
-        
         score = rule_engine._calculate_timeliness(
-            duration_seconds=duration,
+            duration_seconds=180.0,
             training_type="fire_extinguisher"
         )
-        
-        assert score < Decimal("100")
-        assert score >= Decimal("0")
-    
+
+        assert score < 100
+        assert score >= 0
+
     def test_timeliness_too_fast(self, rule_engine):
         """测试时效性计算（过快）"""
-        duration = Decimal("60")  # 1 分钟，低于标准范围
-        
         score = rule_engine._calculate_timeliness(
-            duration_seconds=duration,
+            duration_seconds=30.0,
             training_type="fire_extinguisher"
         )
-        
-        assert score < Decimal("100")
-        assert score >= Decimal("0")
+
+        assert score < 100
+        assert score >= 0
     
     def test_performance_level_classification(self, rule_engine):
         """测试表现等级分类"""
-        assert rule_engine._get_performance_level(95) == PerformanceLevel.EXCELLENT
-        assert rule_engine._get_performance_level(85) == PerformanceLevel.GOOD
-        assert rule_engine._get_performance_level(70) == PerformanceLevel.PASS
-        assert rule_engine._get_performance_level(50) == PerformanceLevel.FAIL
+        assert get_performance_level(95)["code"] == "excellent"
+        assert get_performance_level(85)["code"] == "good"
+        assert get_performance_level(70)["code"] == "pass"
+        assert get_performance_level(50)["code"] == "fail"
 
     def test_action_completeness_returns_zero_without_step_scores(self, rule_engine):
-        assert rule_engine._calculate_action_completeness({}) == Decimal("0")
+        assert rule_engine._calculate_action_completeness({}) == 0.0
 
-    def test_pose_standardization_returns_zero_without_step_scores(self, rule_engine):
-        assert rule_engine._calculate_pose_standardization({}) == Decimal("0")
+    def test_pose_standardization_uses_body_stability_default_when_no_pose_data(self, rule_engine):
+        # 无 step 姿态数据时，pose 部分得 0，body_stability 取默认 70.0 → 21.0
+        score = rule_engine._calculate_pose_standardization({}, {})
 
-    def test_pose_standardization_returns_zero_when_all_weights_are_zero(self, rule_engine):
+        assert score == 21.0
+
+    def test_pose_standardization_uses_only_pose_quality_and_body_stability(self, rule_engine):
+        # 当前实现只看 pose_quality_score 和 body_stability，不再读 weight
         score = rule_engine._calculate_pose_standardization(
-            {"step_scores": {"step1": {"score": 88, "weight": 0}}}
+            {"step1": {"pose_quality_score": 80.0, "completed": True}},
+            {"body": {"stability": 20.0}},
         )
 
-        assert score == Decimal("0")
+        # avg_pose_score=80.0, body_stability≈93.4 → 0.7*80 + 0.3*93.4
+        assert score == round(80.0 * 0.7 + (100.0 - 20.0 * 0.33) * 0.3, 1)
 
-    def test_timeliness_returns_default_when_duration_missing(self, rule_engine):
-        assert rule_engine._calculate_timeliness(duration_seconds=None) == Decimal("50")
+    def test_timeliness_returns_zero_when_duration_missing(self, rule_engine):
+        assert rule_engine._calculate_timeliness(
+            duration_seconds=0.0,
+            training_type="fire_extinguisher",
+        ) == 0.0
 
-    def test_helper_details_return_default_messages(self, rule_engine):
-        assert rule_engine._get_completeness_details({}) == {"message": "无动作检测数据"}
-        assert rule_engine._get_standardization_details({}) == {"message": "无姿态分析数据"}
-
-    def test_timeliness_details_for_unknown_training_type(self, rule_engine):
-        details = rule_engine._get_timeliness_details(Decimal("50"), "unknown")
-
-        assert details["standard_range"] == [90, 150]
-        assert details["is_within_range"] is False
-    
     @pytest.mark.asyncio
     async def test_full_evaluation(self, rule_engine):
         """测试完整评估流程"""
-        action_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 85},
-                "step2": {"step_name": "提灭火器", "score": 90},
-            }
-        }
-        
-        pose_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 88, "weight": 0.2},
-                "step2": {"step_name": "提灭火器", "score": 92, "weight": 0.15},
+        analysis_summary = {
+            "video_duration": 125.5,
+            "training_type": "fire_extinguisher",
+            "step_feature_summary": {
+                "step1": {"completed": True, "confidence": 85, "pose_quality_score": 80},
+                "step2": {"completed": True, "confidence": 90, "pose_quality_score": 85},
             },
-            "frame_count": 30
+            "pose_stats_summary": {
+                "body": {"stability": 25.0},
+            },
+            "completed_steps_count": 2,
+            "completed_steps": ["step1", "step2"],
+            "missing_steps": [],
         }
-        
-        duration = Decimal("125.5")
-        
-        result = await rule_engine.evaluate(
-            action_scores=action_scores,
-            pose_scores=pose_scores,
-            duration_seconds=duration,
-            training_type="fire_extinguisher"
-        )
-        
+
+        result = await rule_engine.evaluate(analysis_summary)
+
         # 验证返回结构
         assert "total_score" in result
         assert "performance_level" in result
+        assert "performance_label" in result
         assert "dimension_scores" in result
         assert "details" in result
-        
+
         # 验证分数范围
         assert 0 <= result["total_score"] <= 100
-        
+
         # 验证维度得分
         dimensions = result["dimension_scores"]
         assert "action_completeness" in dimensions
@@ -417,52 +403,41 @@ class TestFeedbackGenerator:
 
 class TestIntegration:
     """集成测试"""
-    
+
     @pytest.mark.asyncio
     async def test_rule_engine_and_feedback_integration(self):
         """测试规则引擎和反馈生成器的集成"""
         rule_engine = RuleEngine()
         feedback_generator = FeedbackGenerator()
-        
-        # 准备测试数据
-        action_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 88},
-                "step2": {"step_name": "提灭火器", "score": 85},
-                "step3": {"step_name": "拔保险销", "score": 90},
-            }
-        }
-        
-        pose_scores = {
-            "step_scores": {
-                "step1": {"step_name": "准备阶段", "score": 87, "weight": 0.2},
-                "step2": {"step_name": "提灭火器", "score": 83, "weight": 0.15},
-                "step3": {"step_name": "拔保险销", "score": 91, "weight": 0.25},
+
+        # 准备测试数据（统一 analysis_summary 结构）
+        analysis_summary = {
+            "video_duration": 118.5,
+            "training_type": "fire_extinguisher",
+            "step_feature_summary": {
+                "step1": {"completed": True, "confidence": 88, "pose_quality_score": 87},
+                "step2": {"completed": True, "confidence": 85, "pose_quality_score": 83},
+                "step3": {"completed": True, "confidence": 90, "pose_quality_score": 91},
             },
-            "frame_count": 25,
-            "average_angles": {
-                "right_arm": 165.5,
-                "body": 92.3
-            }
+            "pose_stats_summary": {
+                "body": {"stability": 25.0},
+                "right_arm": {"mean": 165.5},
+            },
+            "completed_steps_count": 3,
+            "completed_steps": ["step1", "step2", "step3"],
+            "missing_steps": [],
         }
-        
-        duration = Decimal("118.5")
-        
+
         # 1. 规则引擎评估
-        evaluation = await rule_engine.evaluate(
-            action_scores=action_scores,
-            pose_scores=pose_scores,
-            duration_seconds=duration,
-            training_type="fire_extinguisher"
-        )
-        
+        evaluation = await rule_engine.evaluate(analysis_summary)
+
         # 2. 生成反馈
         feedback = feedback_generator.generate_feedback(
             evaluation_result=evaluation,
             action_logs=None,
-            pose_details=pose_scores
+            pose_details=analysis_summary.get("pose_stats_summary"),
         )
-        
+
         # 验证
         assert evaluation["total_score"] > 0
         assert feedback["overall_feedback"] != ""

@@ -1,0 +1,337 @@
+{
+  "response_time": {
+    "健康检查": {
+      "method": "GET",
+      "path": "/health",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 2.48,
+      "p50_ms": 2.41,
+      "p95_ms": 2.45,
+      "min_ms": 2.32,
+      "max_ms": 2.83
+    },
+    "用户登录": {
+      "method": "POST",
+      "path": "/api/user/login",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 302.01,
+      "p50_ms": 302.16,
+      "p95_ms": 302.3,
+      "min_ms": 301.48,
+      "max_ms": 302.39
+    },
+    "获取个人信息": {
+      "method": "GET",
+      "path": "/api/user/profile",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 6.11,
+      "p50_ms": 6.21,
+      "p95_ms": 6.33,
+      "min_ms": 5.74,
+      "max_ms": 6.33
+    },
+    "训练类型列表": {
+      "method": "GET",
+      "path": "/api/training/types",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 2.58,
+      "p50_ms": 2.56,
+      "p95_ms": 2.64,
+      "min_ms": 2.4,
+      "max_ms": 2.79
+    },
+    "训练历史": {
+      "method": "GET",
+      "path": "/api/training/history?page=1&page_size=20",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 11.17,
+      "p50_ms": 11.07,
+      "p95_ms": 11.17,
+      "min_ms": 10.87,
+      "max_ms": 11.68
+    },
+    "个人统计": {
+      "method": "GET",
+      "path": "/api/stats/personal",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 9.55,
+      "p50_ms": 8.83,
+      "p95_ms": 10.7,
+      "min_ms": 8.18,
+      "max_ms": 11.55
+    },
+    "训练趋势": {
+      "method": "GET",
+      "path": "/api/stats/trend?days=7",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 7.94,
+      "p50_ms": 7.96,
+      "p95_ms": 8.02,
+      "min_ms": 7.69,
+      "max_ms": 8.19
+    },
+    "步骤分析": {
+      "method": "GET",
+      "path": "/api/stats/step-analysis",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 8.22,
+      "p50_ms": 7.95,
+      "p95_ms": 8.48,
+      "min_ms": 7.65,
+      "max_ms": 9.28
+    },
+    "统计总览": {
+      "method": "GET",
+      "path": "/api/stats/overview?days=7",
+      "n": 5,
+      "success": 5,
+      "avg_ms": 12.13,
+      "p50_ms": 11.64,
+      "p95_ms": 13.28,
+      "min_ms": 11.01,
+      "max_ms": 13.4
+    }
+  },
+  "concurrency": {
+    "GET /api/training/types @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 0.2,
+      "qps": 499.95,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 18.68,
+      "p50_ms": 15.62,
+      "p95_ms": 32.2,
+      "max_ms": 104.08
+    },
+    "GET /api/training/types @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 0.4,
+      "qps": 500.36,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 87.29,
+      "p50_ms": 66.9,
+      "p95_ms": 224.09,
+      "max_ms": 364.72
+    },
+    "GET /api/user/profile @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 0.561,
+      "qps": 178.35,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 54.81,
+      "p50_ms": 48.76,
+      "p95_ms": 122.29,
+      "max_ms": 125.83
+    },
+    "GET /api/user/profile @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 1.066,
+      "qps": 187.6,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 250.25,
+      "p50_ms": 245.6,
+      "p95_ms": 306.51,
+      "max_ms": 350.91
+    },
+    "GET /api/stats/personal @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 0.731,
+      "qps": 136.82,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 71.65,
+      "p50_ms": 70.53,
+      "p95_ms": 89.43,
+      "max_ms": 94.45
+    },
+    "GET /api/stats/personal @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 1.672,
+      "qps": 119.6,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 398.56,
+      "p50_ms": 418.44,
+      "p95_ms": 518.18,
+      "max_ms": 602.53
+    },
+    "GET /api/stats/trend?days=7 @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 0.801,
+      "qps": 124.81,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 78.16,
+      "p50_ms": 71.51,
+      "p95_ms": 124.57,
+      "max_ms": 138.02
+    },
+    "GET /api/stats/trend?days=7 @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 1.662,
+      "qps": 120.34,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 394.25,
+      "p50_ms": 406.96,
+      "p95_ms": 529.21,
+      "max_ms": 623.43
+    },
+    "GET /api/stats/overview?days=7 @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 1.362,
+      "qps": 73.41,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 134.04,
+      "p50_ms": 132.98,
+      "p95_ms": 166.55,
+      "max_ms": 178.31
+    },
+    "GET /api/stats/overview?days=7 @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 2.873,
+      "qps": 69.62,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 680.69,
+      "p50_ms": 677.01,
+      "p95_ms": 978.64,
+      "max_ms": 1080.95
+    },
+    "GET /api/training/history?page=1&page_size=20 @c=10": {
+      "concurrency": 10,
+      "total_requests": 100,
+      "wall_time_s": 2.312,
+      "qps": 43.25,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 228.37,
+      "p50_ms": 235.24,
+      "p95_ms": 312.96,
+      "max_ms": 337.82
+    },
+    "GET /api/training/history?page=1&page_size=20 @c=50": {
+      "concurrency": 50,
+      "total_requests": 200,
+      "wall_time_s": 4.158,
+      "qps": 48.1,
+      "success": 200,
+      "failed": 0,
+      "avg_ms": 976.92,
+      "p50_ms": 896.12,
+      "p95_ms": 1643.37,
+      "max_ms": 1891.58
+    },
+    "POST /api/user/login @c=10": {
+      "concurrency": 10,
+      "total_requests": 50,
+      "wall_time_s": 15.168,
+      "qps": 3.3,
+      "success": 38,
+      "failed": 12,
+      "avg_ms": 2970.73,
+      "p50_ms": 1786.48,
+      "p95_ms": 8045.96,
+      "max_ms": 8049.76
+    },
+    "POST /api/user/login @c=50": {
+      "concurrency": 50,
+      "total_requests": 150,
+      "wall_time_s": 45.402,
+      "qps": 3.3,
+      "success": 31,
+      "failed": 119,
+      "avg_ms": 14534.77,
+      "p50_ms": 14513.8,
+      "p95_ms": 21757.35,
+      "max_ms": 24136.2
+    },
+    "POST /api/user/logout @c=20": {
+      "concurrency": 20,
+      "total_requests": 100,
+      "wall_time_s": 0.338,
+      "qps": 295.64,
+      "success": 100,
+      "failed": 0,
+      "avg_ms": 61.05,
+      "p50_ms": 46.19,
+      "p95_ms": 149.67,
+      "max_ms": 240.3
+    }
+  },
+  "sustained": {
+    "sustained_load": {
+      "concurrency": 20,
+      "duration_s": 30.06,
+      "total_requests": 161,
+      "qps": 5.36,
+      "success": 161,
+      "failed": 0,
+      "error_rate_pct": 0.0,
+      "avg_ms": 3733.1,
+      "p95_ms": 28158.28,
+      "max_ms": 28305.14
+    },
+    "resource": {
+      "cpu_avg_pct": 0.1,
+      "cpu_peak_pct": 2.0,
+      "mem_avg_mb": 26.4,
+      "mem_peak_mb": 26.4
+    }
+  },
+  "reliability": {
+    "/health": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    },
+    "/api/user/profile": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    },
+    "/api/stats/overview?days=7": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    },
+    "/api/stats/personal": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    },
+    "/api/stats/trend?days=30": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    },
+    "/api/training/history?page=1&page_size=50": {
+      "success": 20,
+      "failed": 0,
+      "error_rate_pct": 0.0
+    }
+  }
+}

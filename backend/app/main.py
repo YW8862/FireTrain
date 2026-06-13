@@ -10,6 +10,7 @@ from app.api import users_router, training_router, statistics_router, admin_rout
 from app.api.admin_videos import router as admin_videos_router
 from app.middleware import setup_request_logging, setup_exception_handlers
 from app.services.cleanup_service import setup_cleanup_task, stop_cleanup_task
+from app.services.ai_task_queue import ai_task_queue
 
 # 配置日志
 logging.basicConfig(
@@ -60,13 +61,15 @@ app.include_router(admin_videos_router)  # 后台管理-视频检测
 
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时注册后台清理任务。"""
+    """应用启动时启动 AI 任务队列 + 注册后台清理任务。"""
+    await ai_task_queue.start()
     await setup_cleanup_task(app)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """应用关闭时停止后台清理任务。"""
+    """应用关闭时停止 AI 任务队列 + 后台清理任务。"""
+    await ai_task_queue.stop()
     stop_cleanup_task(app)
 
 

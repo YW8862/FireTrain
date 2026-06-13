@@ -16,84 +16,104 @@ def service():
     )
 
 
-def test_compute_pose_stats_filters_non_numeric_values(service):
-    stats = service._compute_pose_stats(
-        [
-            {"angles": {"right_arm": 100, "body": 90}},
-            {"angles": {"right_arm": 140.5, "body": "skip", "left_arm": 80}},
-            {"angles": {"left_arm": None}},
-        ]
-    )
-
-    assert stats["right_arm"] == {
-        "mean": 120.25,
-        "min": 100.0,
-        "max": 140.5,
-        "count": 2,
-    }
-    assert stats["body"]["mean"] == 90.0
-    assert stats["left_arm"]["mean"] == 80.0
-
-
-def test_build_user_prompt_deduplicates_steps_and_formats_pose_summary(service):
+def test_build_user_prompt_includes_baseline_and_evidence(service):
     prompt = service._build_user_prompt(
         {
-            "video_duration": 45,
-            "total_detections": 8,
-            "pose_frame_count": 12,
-            "processed_frames": 18,
-            "step_sequence": [
-                {"step_index": 1, "step_name": "准备阶段", "is_completed": True},
-                {"step_index": 1, "step_name": "准备阶段", "is_completed": True},
-                {"step_index": 2, "step_name": "提灭火器", "is_completed": False},
-            ],
-            "step_times": {"step1": 8.3, "step2": 12},
-            "all_pose_results": [
-                {"angles": {"right_arm": 95, "body": 92}},
-                {"angles": {"right_arm": 155, "body": 88}},
-            ],
+            "analysis_summary": {
+                "video_duration": 120,
+                "processed_frames": 100,
+                "pose_frame_count": 30,
+                "completed_steps_count": 3,
+                "completed_steps": ["step1", "step2", "step3"],
+                "missing_steps": ["step4"],
+                "detection_stats": {
+                    "fire_extinguisher": {
+                        "frame_count": 60,
+                        "detection_count": 80,
+                        "average_confidence": 0.85,
+                    }
+                },
+                "pose_stats_summary": {
+                    "right_arm": {"mean": 120.0, "min": 90.0, "max": 150.0, "stability": 25.0}
+                },
+                "step_feature_summary": {
+                    "step1": {"completed": True, "confidence": 90, "duration": 8.0, "pose_quality_score": 88.0},
+                    "step2": {"completed": True, "confidence": 85, "duration": 6.0, "pose_quality_score": 80.0},
+                },
+            }
+        },
+        baseline_score={
+            "total_score": 78.0,
+            "performance_level": "good",
+            "dimension_scores": {"action_completeness": {"score": 80.0}},
+            "step_scores": {"step1": {"score": 80.0}},
+        },
+    )
+
+    assert "video_duration=120" in prompt
+    assert "right_arm: mean=120.0" in prompt
+    assert "准备阶段: completed=True" in prompt
+    assert "【规则引擎基线分】" in prompt
+    assert "78.0" in prompt
+    assert "【重要】规则引擎基线分仅供参考" in prompt
+
+
+def test_build_user_prompt_omits_evidence_hint_when_data_is_sparse(service):
+    prompt = service._build_user_prompt(
+        {
+            "analysis_summary": {
+                "video_duration": 30,
+                "processed_frames": 0,
+                "pose_frame_count": 0,
+                "completed_steps_count": 0,
+                "detection_stats": {},
+                "pose_stats_summary": {},
+                "step_feature_summary": {},
+            }
         }
     )
 
-    assert prompt.count("准备阶段") == 1
-    assert "提灭火器：未完成" in prompt
-    assert "右臂角度：平均 125.0°" in prompt
-    assert "身体姿态角度：平均 90.0°" in prompt
-    assert "操作过快，可能遗漏步骤" in prompt
+    assert "视频中几乎没有有效证据" in prompt
 
 
-def test_build_user_prompt_handles_missing_steps_and_torso_stats(service):
+def test_build_user_prompt_uses_all_six_step_definitions(service):
     prompt = service._build_user_prompt(
         {
-            "video_duration": 180,
-            "step_sequence": [],
-            "all_pose_results": [
-                {"angles": {"torso": 99, "right_knee": 110}},
-                {"angles": {"torso": 101, "right_knee": 130}},
-            ],
+            "analysis_summary": {
+                "video_duration": 90,
+                "processed_frames": 60,
+                "pose_frame_count": 30,
+                "completed_steps_count": 0,
+                "detection_stats": {},
+                "pose_stats_summary": {},
+                "step_feature_summary": {},
+            }
         }
     )
 
-    assert "未检测到有效步骤" in prompt
-    assert "身体姿态角度：平均 100.0°" in prompt
-    assert "右膝角度：平均 120.0°" in prompt
-    assert "操作时间过长，需加强熟练度" in prompt
+    for step_name in ["准备阶段", "提灭火器", "拔保险销", "握喷管", "瞄准火源", "压把手"]:
+        assert step_name in prompt
 
 
-def test_build_user_prompt_includes_left_arm_range(service):
+def test_build_user_prompt_includes_evidence_hint_for_partial_steps(service):
     prompt = service._build_user_prompt(
         {
-            "video_duration": 100,
-            "step_sequence": [],
-            "all_pose_results": [
-                {"angles": {"left_arm": 70}},
-                {"angles": {"left_arm": 90}},
-            ],
+            "analysis_summary": {
+                "video_duration": 90,
+                "processed_frames": 100,
+                "pose_frame_count": 60,
+                "completed_steps_count": 2,
+                "detection_stats": {
+                    "fire_extinguisher": {"frame_count": 40, "detection_count": 50, "average_confidence": 0.9}
+                },
+                "pose_stats_summary": {},
+                "step_feature_summary": {},
+            }
         }
     )
 
-    assert "左臂角度：平均 80.0°，范围 70.0°-90.0°" in prompt
-    assert "操作时间合理" in prompt
+    assert "【证据强度提示】" in prompt
+    assert "状态机仅识别出 2/6 个完整步骤" in prompt
 
 
 def test_parse_llm_response_handles_markdown_and_normalizes_defaults(service):
@@ -138,8 +158,9 @@ def test_parse_llm_response_raises_for_invalid_json(service):
         service._parse_llm_response("not json")
 
 
-def test_compute_pose_stats_returns_empty_for_no_pose_results(service):
-    assert service._compute_pose_stats([]) == {}
+def test_compute_pose_stats_returns_empty_for_no_pose_results():
+    # _compute_pose_stats 已在重构中移除，姿态统计由调用方（rule_engine）预处理后传入
+    pass
 
 
 @pytest.mark.asyncio
@@ -148,7 +169,7 @@ async def test_score_training_orchestrates_internal_steps(service, monkeypatch):
     parsed_result = {"total_score": 90.0}
     call_llm = AsyncMock(return_value="raw")
 
-    monkeypatch.setattr(service, "_build_user_prompt", lambda payload: built_prompt)
+    monkeypatch.setattr(service, "_build_user_prompt", lambda *args, **kwargs: built_prompt)
     monkeypatch.setattr(service, "_call_llm", call_llm)
     monkeypatch.setattr(service, "_parse_llm_response", lambda raw: parsed_result)
 

@@ -45,6 +45,8 @@ class UserInfoResponse(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     role: str
+    can_switch_role: bool = False
+    original_role: Optional[str] = None
     is_active: bool
     last_login_at: Optional[datetime] = None
     created_at: datetime
@@ -89,7 +91,8 @@ class RoleSwitchRequest(BaseModel):
 class RoleSwitchResponse(BaseModel):
     """角色切换响应"""
     role: str
-    old_role: str | None = None
+    original_role: str | None = None
+    can_switch_role: bool = False
     token: str | None = None  # 新的 Token
 
 
@@ -101,6 +104,7 @@ class AdminCreateRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     password: str = Field(..., min_length=6, max_length=50, description="密码")
     role: str = Field("admin", description="角色 (仅允许 admin，Root 账号唯一且不可新增)")
+    can_switch_role: bool = Field(False, description="是否允许切换角色")
 
 
 class AdminUpdateRoleRequest(BaseModel):
@@ -118,6 +122,8 @@ class AdminInfoResponse(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     role: str
+    can_switch_role: bool = False
+    original_role: Optional[str] = None
     is_active: bool
     last_login_at: Optional[datetime] = None
     created_at: datetime

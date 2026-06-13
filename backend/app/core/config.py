@@ -26,7 +26,12 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
     # 数据库配置
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./fire_training.db")
+    # Why: 相对路径 ./fire_training.db 会跟随 CWD 飘移，从 backend/ 启动写一个库，
+    # 从根目录启动又写另一个；测试套件曾因此 drop_all 误清生产 DB。
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        f"sqlite+aiosqlite:///{BACKEND_DIR / 'fire_training.db'}",
+    )
 
     # CORS 配置
     CORS_ORIGINS: List[str] = [

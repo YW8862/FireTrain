@@ -146,14 +146,17 @@ async def admin_upload_video(
     }
     
     training = await training_repo.create(training_data)
-    
+    # 显式 commit：worker 在 _should_process 里会开新 session 读这行，
+    # 不 commit 的话 worker 立即拿到 task 也会因为看不到未提交行而跳过
+    await db.commit()
+
     print(f"✅ 训练记录已创建 (ID: {training.id}, 用户: {username})")
-    
+
     # 5. 异步执行 AI 分析和评分（不传递 db 会话，在任务内部创建）
-    import asyncio
-    asyncio.create_task(
-        process_admin_video_analysis(training.id)
-    )
+    #    走有界队列 + worker 池，避免之前 fire-and-forget 模式下的 GC + 孤儿 worker 问题
+    from app.services.ai_task_queue import ai_task_queue
+
+    await ai_task_queue.enqueue(training.id)
     
     return AdminVideoUploadResponse(
         message="视频上传成功，正在进行 AI 分析",

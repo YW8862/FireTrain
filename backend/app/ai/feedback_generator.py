@@ -3,7 +3,6 @@
 根据评分结果生成可解释的反馈文本，指出问题和改进建议。
 """
 from typing import Any, Dict, List, Optional
-from app.ai.rule_engine import PerformanceLevel
 
 
 class FeedbackGenerator:

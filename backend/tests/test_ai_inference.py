@@ -24,7 +24,7 @@ class TestTrainingInferenceService:
         
         # 使用 ONNX 模型路径
         service = TrainingInferenceService(
-            yolo_model_path="yolov8.onnx",  # ✅ ONNX 格式
+            yolo_model_path=yolo_onnx_path,  # ✅ ONNX 格式
             yolo_conf_threshold=0.5,
             use_pose_analysis=True
         )
@@ -61,8 +61,9 @@ class TestTrainingInferenceService:
     
     def test_generate_ai_scores(self):
         """测试 AI 评分生成"""
+        import asyncio
         service = TrainingInferenceService(
-            yolo_model_path="yolov8.onnx",
+            yolo_model_path=None,
             use_pose_analysis=True
         )
         
@@ -147,7 +148,7 @@ class TestTrainingInferenceService:
         }
         
         try:
-            score_result = service.generate_ai_scores(mock_analysis)
+            score_result = asyncio.run(service.generate_ai_scores(mock_analysis))
             
             # 验证基本字段
             assert "total_score" in score_result
@@ -181,7 +182,7 @@ class TestTrainingInferenceService:
         """测试服务初始化（ONNX 模型加载）"""
         try:
             service = TrainingInferenceService(
-                yolo_model_path="yolov8.onnx",
+                yolo_model_path=None,
                 yolo_conf_threshold=0.5,
                 use_pose_analysis=True
             )
@@ -212,7 +213,7 @@ class TestTrainingInferenceService:
             pytest.skip("真实训练视频不存在，跳过此测试")
         
         service = TrainingInferenceService(
-            yolo_model_path="yolov8.onnx",
+            yolo_model_path=None,
             yolo_conf_threshold=0.5,
             use_pose_analysis=True
         )
@@ -246,7 +247,7 @@ class TestFireExtinguisherDetectorONNX:
         
         try:
             detector = FireExtinguisherDetector(
-                model_path="yolov8.onnx",
+                model_path=None,
                 conf_threshold=0.5,
                 img_size=640
             )
@@ -277,7 +278,7 @@ class TestFireExtinguisherDetectorONNX:
         
         try:
             detector = FireExtinguisherDetector(
-                model_path="yolov8.onnx",
+                model_path=None,
                 conf_threshold=0.5
             )
             

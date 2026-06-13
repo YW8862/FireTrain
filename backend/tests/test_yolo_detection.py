@@ -9,19 +9,19 @@ class TestFireExtinguisherDetector:
     
     @pytest.fixture
     def detector(self):
-        """创建检测器实例（使用 nano 模型）"""
+        """创建检测器实例（使用 settings 默认 ONNX 模型）"""
         from app.ai.fire_extinguisher_detector import FireExtinguisherDetector
-        
+
         return FireExtinguisherDetector(
-            model_path="yolov8n.pt",
+            model_path=None,
             conf_threshold=0.5,
             img_size=640,
             device="cpu"
         )
-    
+
     def test_detector_initialization(self, detector):
         """测试检测器初始化"""
-        assert detector.model is not None
+        assert detector.session is not None
         assert detector.conf_threshold == 0.5
         assert detector.img_size == 640
     
@@ -300,7 +300,7 @@ class TestIntegration:
         from app.ai.fire_extinguisher_detector import FireExtinguisherDetector
         from app.ai.detection_logger import DetectionLogger
         
-        detector = FireExtinguisherDetector(model_path="yolov8n.pt")
+        detector = FireExtinguisherDetector(model_path=None)
         logger = DetectionLogger(log_dir=str(tmp_path))
         
         try:

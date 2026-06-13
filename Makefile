@@ -16,7 +16,7 @@ CRITICAL_COV_MODULES = \
 	--cov=app.middleware.permission \
 	--cov=app.services.training_service
 
-.PHONY: default help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-backend test-backend-all test-critical test-frontend run-local local-up local-down local-logs update-cert docker-up docker-down docker-logs docker-restart docker-status
+.PHONY: default help tree init check-env install-backend install-frontend lint lint-backend lint-frontend test test-all test-backend test-backend-all test-critical test-frontend coverage-html serve-coverage coverage-clean run-local local-up local-down local-logs update-cert docker-up docker-down docker-logs docker-restart docker-status
 
 help:
 	@echo "Available commands:"
@@ -29,6 +29,10 @@ help:
 	@echo "  make test        - Run the 6 critical backend module tests"
 	@echo "  make test-critical - Run the 6 critical backend module tests"
 	@echo "  make test-backend-all - Run the legacy full backend test suite"
+	@echo "  make test-all    - Run full backend + frontend test suites"
+	@echo "  make coverage-html - Generate HTML coverage report (backend + frontend)"
+	@echo "  make serve-coverage - Start local HTTP servers for both coverage reports (ports 8765/8766)"
+	@echo "  make coverage-clean - Remove generated coverage artifacts (htmlcov/, coverage/)"
 	@echo "  make run-local   - Placeholder local run command"
 	@echo "  make local-up    - Start services in background (local dev)"
 	@echo "  make local-down  - Stop all local services"
@@ -88,8 +92,45 @@ test-critical:
 test-backend-all:
 	@cd backend && . .venv/bin/activate && pytest --cov=app --cov-report=term-missing
 
+test-all: test-backend-all test-frontend
+	@echo "✅ All tests (backend + frontend) completed."
+
 test-frontend:
 	@cd frontend && npm run test
+
+coverage-html:
+	@echo "📊 后端：跑全量测试并生成 HTML 覆盖率报告..."
+	@cd backend && . .venv/bin/activate && pytest --cov=app --cov-report=html:htmlcov --cov-report=term-missing
+	@echo "📊 前端：跑测试并生成 HTML 覆盖率报告..."
+	@cd frontend && npm run test -- --coverage.reporter=text --coverage.reporter=html >/dev/null
+	@echo ""
+	@echo "✅ HTML 报告已生成："
+	@echo "  后端：backend/htmlcov/index.html"
+	@echo "  前端：frontend/coverage-html/index.html"
+
+coverage-clean:
+	@rm -rf backend/htmlcov backend/.coverage frontend/coverage-html
+	@echo "🧹 已清理 coverage 产物"
+
+serve-coverage:
+	@if [ ! -d backend/htmlcov ] || [ ! -d frontend/coverage-html ]; then \
+		echo "❌ 报告未生成，请先执行: make coverage-html"; exit 1; \
+	fi
+	@echo "🚀 启动两个 HTTP 服务（Ctrl+C 一起停）："
+	@echo "  后端 http.server :8765  → backend/htmlcov/"
+	@echo "  前端 http.server :8766  → frontend/coverage-html/"
+	@echo ""
+	@echo "📡 在开发机执行端口转发："
+	@echo "  ssh -L 8765:localhost:8765 -L 8766:localhost:8766 user@<server-host>"
+	@echo ""
+	@echo "🌐 开发机浏览器打开："
+	@echo "  http://localhost:8765/  ← 后端覆盖率"
+	@echo "  http://localhost:8766/  ← 前端覆盖率"
+	@echo ""
+	@trap 'kill 0' INT TERM EXIT; \
+		cd backend/htmlcov && python3 -m http.server 8765 & \
+		cd frontend/coverage-html && python3 -m http.server 8766 & \
+		wait
 
 run-local:
 	@echo "本地运行命令："

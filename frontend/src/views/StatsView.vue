@@ -176,9 +176,12 @@ const stats = reactive({
 const stepAnalysis = ref([])
 
 const normalizeSuccessRate = (value) => {
-  const rate = Number(value || 0)
+  // 后端 StepAnalysisItem.success_rate 约定为 0-100 的百分数。
+  // 早先版本曾把 >1 的值自动除以 100（误以为是 0-1 比例），
+  // 导致所有成功率被压缩 100 倍显示成 0.几 %，现已固定为直通。
+  const rate = Number(value)
   if (Number.isNaN(rate)) return 0
-  return rate > 1 ? rate / 100 : rate
+  return rate
 }
 
 const normalizeStepAnalysis = (items = []) => {

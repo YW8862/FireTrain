@@ -59,6 +59,8 @@ def _build_admin_info_response(user) -> AdminInfoResponse:
         email=user.email,
         phone=user.phone,
         role=user.role,
+        can_switch_role=getattr(user, "can_switch_role", False),
+        original_role=getattr(user, "original_role", None),
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
@@ -236,6 +238,7 @@ async def create_admin(
         password_hash=hashed_password,
         phone=None,
         role=admin_data.role,
+        can_switch_role=admin_data.can_switch_role,
         is_active=True
     )
 

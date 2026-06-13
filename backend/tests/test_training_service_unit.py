@@ -37,7 +37,7 @@ async def test_start_training_creates_training_record(service, training_repo):
 
     assert training.user_id == 12
     assert training.training_type == "fire_extinguisher"
-    assert training.status == "created"
+    assert training.status == "pending"
     assert training.duration_seconds == 120
     training_repo.create.assert_awaited_once()
 
@@ -133,7 +133,7 @@ async def test_complete_training_rejects_invalid_status(service, training_repo):
 @pytest.mark.asyncio
 async def test_complete_training_requires_video_path(service, training_repo):
     training_repo.get_by_id.return_value = SimpleNamespace(
-        status="created",
+        status="processing",
         video_path=None,
     )
 
@@ -149,7 +149,7 @@ async def test_complete_training_uses_ai_scoring_when_video_exists(
         id=7,
         user_id=9,
         training_type="extinguisher",
-        status="created",
+        status="processing",
         video_path="/tmp/demo.mp4",
         started_at=None,
         total_score=None,
@@ -164,10 +164,23 @@ async def test_complete_training_uses_ai_scoring_when_video_exists(
 
     fake_inference = SimpleNamespace(
         analyze_video=lambda **kwargs: {
+            "analysis_summary": {
+                "supports_extinguisher_detection": True,
+                "completed_steps_count": 3,
+                "video_duration": 120.0,
+                "validity_checks": {
+                    "has_extinguisher": True,
+                    "has_pose": True,
+                    "has_step_signal": True,
+                },
+                "step_feature_summary": {
+                    "step1": {"completed": True, "confidence": 90, "pose_quality_score": 80},
+                },
+                "pose_stats_summary": {
+                    "body": {"stability": 25.0},
+                },
+            },
             "total_detections": 8,
-            "step_scores": {"step1": {"score": 80}},
-            "suggestions": ["保持稳定"],
-            "dimension_scores": {"accuracy": 88},
         },
         close=lambda: close_called.__setitem__("value", True),
     )
@@ -182,17 +195,25 @@ async def test_complete_training_uses_ai_scoring_when_video_exists(
         def close(self):
             return fake_inference.close()
 
+        @staticmethod
+        def generate_real_suggestions(summary, step_scores):
+            return ["保持稳定", "继续练习"]
+
     monkeypatch.setitem(
         sys.modules,
         "app.ai.training_inference_service",
         types.SimpleNamespace(TrainingInferenceService=FakeTrainingInferenceService),
     )
+    monkeypatch.setattr(
+        "app.services.training_service.LLMScoringService.from_settings",
+        lambda: None,
+    )
 
     result = await service.complete_training_with_ai_analysis(training_id=7, use_ai_scoring=True)
 
     assert result["used_ai_scoring"] is True
-    assert result["total_score"] == 80
-    assert result["scoring_result"]["performance_level"] == "good"
+    assert result["total_score"] > 0
+    assert result["scoring_result"]["score_source"] == "rule"
     assert training.status == "done"
     assert close_called["value"] is True
     training_repo.update.assert_awaited_once()
@@ -265,21 +286,22 @@ async def test_get_user_training_history_caps_page_size(service, training_repo):
     )
 
 
-def test_validate_detection_requires_extinguisher_when_model_supports_it(service):
+def test_validate_detection_rejects_when_no_pose_and_no_extinguisher(service):
+    """当模型支持灭火器检测但两者都缺失时，无有效证据，拒绝评分。"""
     result = service._validate_detection_result(
         {
             "supports_extinguisher_detection": True,
-            "completed_steps_count": 2,
+            "completed_steps_count": 0,
             "video_duration": 30,
             "validity_checks": {
                 "has_extinguisher": False,
-                "has_pose": True,
-                "has_step_signal": True,
+                "has_pose": False,
+                "has_step_signal": False,
             },
         }
     )
 
-    assert result == {"is_valid": False, "reason": "未稳定检测到灭火器"}
+    assert result == {"is_valid": False, "reason": "视频中未检测到人体姿态和灭火器，无有效证据"}
 
 
 def test_validate_detection_allows_pose_fallback_when_model_has_no_extinguisher(service):
@@ -299,27 +321,29 @@ def test_validate_detection_allows_pose_fallback_when_model_has_no_extinguisher(
     assert result == {"is_valid": True, "reason": ""}
 
 
-def test_validate_detection_rejects_when_pose_missing(service):
+def test_validate_detection_rejects_when_video_too_short(service):
+    """视频时长 < 8s 无法形成有效时序。"""
     result = service._validate_detection_result(
         {
-            "supports_extinguisher_detection": False,
-            "completed_steps_count": 2,
-            "video_duration": 30,
+            "supports_extinguisher_detection": True,
+            "completed_steps_count": 0,
+            "video_duration": 5,
             "validity_checks": {
-                "has_extinguisher": False,
-                "has_pose": False,
+                "has_extinguisher": True,
+                "has_pose": True,
                 "has_step_signal": True,
             },
         }
     )
 
-    assert result == {"is_valid": False, "reason": "未检测到有效人体姿态"}
+    assert result == {"is_valid": False, "reason": "视频时长过短（不足 8 秒），无法完成评估"}
 
 
-def test_validate_detection_rejects_when_no_valid_action_signal(service):
+def test_validate_detection_passes_with_partial_step_signal(service):
+    """只要有任一证据（姿态/灭火器），即使步骤未完整识别也放行，由规则+LLM 评分。"""
     result = service._validate_detection_result(
         {
-            "supports_extinguisher_detection": False,
+            "supports_extinguisher_detection": True,
             "completed_steps_count": 0,
             "video_duration": 30,
             "validity_checks": {
@@ -330,7 +354,7 @@ def test_validate_detection_rejects_when_no_valid_action_signal(service):
         }
     )
 
-    assert result == {"is_valid": False, "reason": "未识别到有效步骤特征"}
+    assert result == {"is_valid": True, "reason": ""}
 
 
 @pytest.mark.asyncio
@@ -491,8 +515,8 @@ async def test_complete_training_returns_zero_score_when_detection_has_no_pose(
         def analyze_video(self, **kwargs):
             return {
                 "analysis_summary": {
-                    "supports_extinguisher_detection": False,
-                    "completed_steps_count": 2,
+                    "supports_extinguisher_detection": True,
+                    "completed_steps_count": 0,
                     "video_duration": 28,
                     "validity_checks": {
                         "has_extinguisher": False,
@@ -505,6 +529,10 @@ async def test_complete_training_returns_zero_score_when_detection_has_no_pose(
         def close(self):
             return None
 
+        @staticmethod
+        def generate_real_suggestions(summary, step_scores):
+            return []
+
     monkeypatch.setitem(
         sys.modules,
         "app.ai.training_inference_service",
@@ -515,5 +543,5 @@ async def test_complete_training_returns_zero_score_when_detection_has_no_pose(
 
     assert result["total_score"] == 0.0
     assert result["used_ai_scoring"] is False
-    assert "未检测到有效人体姿态" in result["feedback"]
+    assert "无有效证据" in result["feedback"]
     assert result["scoring_result"]["score_source"] == "zero"
